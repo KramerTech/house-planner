@@ -1,0 +1,100 @@
+<ng-template #arrow>
+  <button
+    type="button"
+    class="slope-arrow"
+    [attr.aria-label]="slopeLabel()"
+    [pTooltip]="slopeLabel()"
+    tooltipPosition="top"
+    (click)="rotateSlope($event)"
+  >
+    <svg viewBox="0 0 24 24" [style.transform]="'rotate(' + arrowRotation() + 'deg)'">
+      <path d="M12 3 L19 11 H14.5 V21 H9.5 V11 H5 Z" />
+    </svg>
+  </button>
+</ng-template>
+
+@if (compact()) {
+  <div class="compact-body">
+    <ng-container [ngTemplateOutlet]="arrow" />
+    <button type="button" class="expand-btn" aria-label="Edit roof" (click)="expand.emit()">
+      <i class="pi pi-sliders-h"></i>
+    </button>
+  </div>
+} @else {
+  <div class="header">
+    <ng-container [ngTemplateOutlet]="arrow" />
+    <div class="title">
+      @if (isRoot()) {
+        <span class="root-tag" pTooltip="Anchor section: every section must connect to it">Anchor</span>
+      }
+      <span class="dims">{{ section().rect.w }}' × {{ section().rect.d }}'</span>
+    </div>
+    @if (!isRoot()) {
+      <span
+        [pTooltip]="canDelete() ? 'Delete section' : 'Can’t delete: other sections connect through this one'"
+        tooltipPosition="top"
+      >
+        <p-button
+          icon="pi pi-trash"
+          severity="danger"
+          [text]="true"
+          [rounded]="true"
+          size="small"
+          ariaLabel="Delete section"
+          [disabled]="!canDelete()"
+          (onClick)="remove()"
+        />
+      </span>
+    }
+  </div>
+
+  <div class="field">
+    <span class="label">Pitch <b>{{ formatPitch(section().roof.pitch) }}</b></span>
+    <p-slider
+      [ngModel]="section().roof.pitch"
+      (ngModelChange)="setPitch($event)"
+      [min]="roofLimits.pitch.min"
+      [max]="roofLimits.pitch.max"
+      [step]="roofLimits.pitch.step"
+    />
+  </div>
+
+  <div class="field">
+    <span class="label">
+      Walls <b>{{ formatFeet(section().roof.lowWallHeight) }}</b> low
+      <span class="muted">·</span> <b>{{ formatFeet(highWall()) }}</b> high
+    </span>
+    <app-wall-height-slider
+      [low]="section().roof.lowWallHeight"
+      [rise]="rise()"
+      [min]="roofLimits.lowWallHeight.min"
+      [max]="roofLimits.lowWallHeight.max"
+      (lowChange)="setLowWall($event)"
+    />
+  </div>
+
+  <div class="field toggle-row">
+    <span class="label">Unheated</span>
+    <p-toggleswitch [ngModel]="section().unheated" (ngModelChange)="setUnheated($event)" />
+  </div>
+
+  @if (section().unheated) {
+    <div class="field toggle-row nested">
+      <span class="label">Patio</span>
+      <p-toggleswitch [ngModel]="section().patio.enabled" (ngModelChange)="setPatio($event)" />
+    </div>
+  }
+
+  @if (section().patio.enabled) {
+    <div class="field">
+      <span class="label">Post spacing <b>{{ formatFeet(section().patio.postSpacing) }}</b></span>
+      <p-slider
+        [ngModel]="section().patio.postSpacing"
+        (ngModelChange)="setPostSpacing($event)"
+        [min]="patioLimits.postSpacing.min"
+        [max]="patioLimits.postSpacing.max"
+        [step]="patioLimits.postSpacing.step"
+      />
+    </div>
+  }
+}

@@ -1,0 +1,111 @@
+<svg class="plan" [attr.width]="size().x" [attr.height]="size().y">
+  <defs>
+    <pattern
+      id="grid-minor"
+      patternUnits="userSpaceOnUse"
+      [attr.width]="grid().minor"
+      [attr.height]="grid().minor"
+      [attr.x]="grid().offsetX"
+      [attr.y]="grid().offsetY"
+    >
+      <path [attr.d]="'M ' + grid().minor + ' 0 L 0 0 0 ' + grid().minor" class="grid-minor" />
+    </pattern>
+    <pattern
+      id="grid-major"
+      patternUnits="userSpaceOnUse"
+      [attr.width]="grid().major"
+      [attr.height]="grid().major"
+      [attr.x]="grid().offsetX"
+      [attr.y]="grid().offsetY"
+    >
+      <path [attr.d]="'M ' + grid().major + ' 0 L 0 0 0 ' + grid().major" class="grid-major" />
+    </pattern>
+    <pattern id="patio-hatch" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="10" class="hatch" />
+    </pattern>
+  </defs>
+
+  <rect width="100%" height="100%" fill="url(#grid-minor)" />
+  <rect width="100%" height="100%" fill="url(#grid-major)" />
+
+  @for (sv of sectionViews(); track sv.section.id) {
+    <g class="section" [class.root]="sv.isRoot" [class.unheated]="sv.section.unheated" [class.patio]="sv.section.patio.enabled">
+      <rect class="body" [attr.x]="sv.x" [attr.y]="sv.y" [attr.width]="sv.w" [attr.height]="sv.h" />
+      @if (sv.section.patio.enabled) {
+        <rect class="hatch-fill" [attr.x]="sv.x" [attr.y]="sv.y" [attr.width]="sv.w" [attr.height]="sv.h" />
+      }
+      <line class="low-edge" [attr.x1]="sv.lowEdge.x1" [attr.y1]="sv.lowEdge.y1" [attr.x2]="sv.lowEdge.x2" [attr.y2]="sv.lowEdge.y2" />
+      <rect class="outline" [attr.x]="sv.x" [attr.y]="sv.y" [attr.width]="sv.w" [attr.height]="sv.h" />
+      @if (sv.showDims) {
+        <text class="dim" [attr.x]="sv.cx" [attr.y]="sv.y + 14" text-anchor="middle">{{ sv.section.rect.w }}'</text>
+        <text
+          class="dim"
+          text-anchor="middle"
+          [attr.transform]="'translate(' + (sv.x + 12) + ',' + sv.cy + ') rotate(-90)'"
+        >{{ sv.section.rect.d }}'</text>
+      }
+    </g>
+  }
+
+  @for (l of freeSegLines(); track $index) {
+    <line class="free-seg" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+  }
+
+  @if (hoverFree(); as hf) {
+    @if (hf.preview; as pr) {
+      <rect class="preview" [attr.x]="pr.x" [attr.y]="pr.y" [attr.width]="pr.w" [attr.height]="pr.h" />
+      <text class="preview-dim" [attr.x]="pr.x + pr.w / 2" [attr.y]="pr.y + pr.h / 2" text-anchor="middle" dominant-baseline="middle">
+        {{ hf.dims }}
+      </text>
+    }
+    <line class="free-seg hot" [class.blocked]="!hf.preview" [attr.x1]="hf.line.x1" [attr.y1]="hf.line.y1" [attr.x2]="hf.line.x2" [attr.y2]="hf.line.y2" />
+  }
+
+  @if (activeSideLine(); as l) {
+    <line class="active-side" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+  }
+
+  @if (dragLabel(); as dl) {
+    <g class="drag-label" [attr.transform]="'translate(' + dl.x + ',' + dl.y + ')'">
+      <rect x="-22" y="-26" width="44" height="18" rx="4" />
+      <text y="-13" text-anchor="middle">{{ dl.text }}</text>
+    </g>
+  }
+</svg>
+
+@if (showPanels()) {
+  <div class="panels">
+    @for (sv of sectionViews(); track sv.section.id) {
+      <app-section-panel
+        [section]="sv.section"
+        [isRoot]="sv.isRoot"
+        [compact]="sv.compact && expandedId() !== sv.section.id"
+        [class.expanded]="expandedId() === sv.section.id"
+        [style.left.px]="sv.cx"
+        [style.top.px]="sv.cy"
+        (expand)="expandedId.set(sv.section.id)"
+      />
+    }
+  </div>
+}
+
+<div class="area-summary" aria-label="Area summary">
+  <div class="row heated"><span>Heated</span><b>{{ area().heated.toLocaleString() }} sq ft</b></div>
+  <div class="row"><span>Unheated</span><b>{{ area().unheated.toLocaleString() }} sq ft</b></div>
+  <div class="row"><span>Covered</span><b>{{ area().covered.toLocaleString() }} sq ft</b></div>
+  <div class="row total"><span>Total</span><b>{{ area().total.toLocaleString() }} sq ft</b></div>
+  <div class="row roof"><span>Roof</span><b>{{ roofArea().toLocaleString() }} sq ft</b></div>
+</div>
+
+<div class="compass" aria-hidden="true"><span>N</span><i class="pi pi-arrow-up"></i></div>
+
+<div class="view-controls">
+  <p-button icon="pi pi-minus" severity="secondary" size="small" [text]="true" (onClick)="zoomBy(1 / 1.25)" pTooltip="Zoom out" />
+  <span class="zoom-readout">{{ zoomPercent() }}%</span>
+  <p-button icon="pi pi-plus" severity="secondary" size="small" [text]="true" (onClick)="zoomBy(1.25)" pTooltip="Zoom in" />
+  <p-button icon="pi pi-expand" severity="secondary" size="small" [text]="true" (onClick)="fit()" pTooltip="Fit to plan" />
+</div>
+
+<div class="hint">
+  Drag an edge to resize · <b>Shift+click</b> an open edge to add a section · Drag empty space to pan · Wheel to zoom
+</div>
