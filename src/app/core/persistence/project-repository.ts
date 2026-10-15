@@ -1,6 +1,9 @@
 import { Injectable } from '@angular/core';
-import { DEFAULT_PATIO, DEFAULT_ROOF, DEFAULT_SETTINGS, SCHEMA_VERSION } from '../model/defaults';
-import { Checkpoint, DesignSnapshot, Project, ProjectMeta, Section } from '../model/types';
+import { createFloor, DEFAULT_PATIO, DEFAULT_ROOF, DEFAULT_SETTINGS, newId, SCHEMA_VERSION } from '../model/defaults';
+import { Checkpoint, DesignSnapshot, Floor, Project, ProjectMeta, ProjectSettings, Section } from '../model/types';
+import { floorFootprint, normalizeLevels, regionOf } from '../floorplan/floor-region';
+import { boundary, erode } from '../floorplan/region';
+import { followOutline } from '../floorplan/wall-graph';
 
 const PREFIX = 'home-designer';
 /** Storage prefix used before the app was renamed; migrated once on startup. */
@@ -117,13 +120,19 @@ function migrateLegacyKeys(): void {
  * here as the model grows; missing fields are filled from defaults.
  *   v1 → v2: added camera, checkpoints, activeCheckpointId.
  *   v2 → v3: added section.unheated (patios, which require it, are unheated).
+ *   v3 → v4: added floors (interior walls, doors, furniture, stories).
+ *   v4 → v5: section edges became wall centerlines (walls used to sit inside them);
+ *            interior walls and exterior doors move with the faces they were on.
+ *   v5 → v6: added basements (a first floor below 0), floor.unexcavated,
+ *            floor.groups and wall.divider.
+ *   v6 → v7: added windows and skylights.
  */
 export function migrateProject(raw: unknown): Project | null {
   if (!raw || typeof raw !== 'object') return null;
   const p = raw as Partial<Project>;
   if (!p.id || !p.rootId || !Array.isArray(p.sections)) return null;
   const checkpoints: Checkpoint[] = Array.isArray(p.checkpoints)
-    ? p.checkpoints.map((c) => ({ ...c, snapshot: migrateSnapshot(c.snapshot) }))
+    ? p.checkpoints.map((c) => ({ ...c, snapshot: migrateSnapshot(c.snapshot, p.schemaVersion ?? 1) }))
     : [];
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -131,18 +140,16 @@ export function migrateProject(raw: unknown): Project | null {
     name: p.name ?? 'Untitled',
     createdAt: p.createdAt ?? Date.now(),
     updatedAt: p.updatedAt ?? Date.now(),
-    ...migrateSnapshot(p as DesignSnapshot),
+    ...migrateSnapshot(p as DesignSnapshot, p.schemaVersion ?? 1),
     checkpoints,
     activeCheckpointId: checkpoints.some((c) => c.id === p.activeCheckpointId) ? p.activeCheckpointId! : null,
   };
 }
 
-function migrateSnapshot(s: Partial<DesignSnapshot>): DesignSnapshot {
-  return {
-    rootId: s.rootId!,
-    settings: { ...DEFAULT_SETTINGS, ...s.settings },
-    camera: s.camera ?? null,
-    sections: (s.sections ?? []).map(
+function migrateSnapshot(s: Partial<DesignSnapshot>, version: number): DesignSnapshot {
+  let floors = normalizeLevels(Array.isArray(s.floors) && s.floors.length > 0 ? s.floors.map(migrateFloor) : [createFloor()]);
+  const settings = { ...DEFAULT_SETTINGS, ...s.settings };
+  const sections = (s.sections ?? []).map(
       (sec: Section): Section => {
         const patio = { ...DEFAULT_PATIO, ...sec.patio };
         return {
@@ -152,6 +159,37 @@ function migrateSnapshot(s: Partial<DesignSnapshot>): DesignSnapshot {
           patio,
         };
       },
-    ),
+    );
+  if (version < 5) floors = floors.map((f) => toCenterlineWalls(f, sections, settings));
+  return {
+    rootId: s.rootId!,
+    settings,
+    camera: s.camera ?? null,
+    floors,
+    sections,
+    windows: Array.isArray(s.windows) ? s.windows : [],
+    skylights: Array.isArray(s.skylights) ? s.skylights : [],
+  };
+}
+
+/** v4 floors were laid out inside walls that sat within the section edges. */
+function toCenterlineWalls(floor: Floor, sections: Section[], settings: ProjectSettings): Floor {
+  const lines = floorFootprint(sections, floor.elevation);
+  const before = { faces: boundary(erode(lines, settings.wallThickness)), outer: boundary(lines) };
+  return followOutline(floor, before, regionOf(sections, settings, floor));
+}
+
+function migrateFloor(f: Partial<Floor>): Floor {
+  return {
+    id: f.id ?? newId(),
+    elevation: f.elevation ?? 0,
+    nodes: f.nodes ?? [],
+    walls: f.walls ?? [],
+    doors: f.doors ?? [],
+    items: f.items ?? [],
+    openings: f.openings ?? [],
+    unexcavated: f.unexcavated ?? [],
+    roomNames: f.roomNames ?? [],
+    groups: f.groups ?? [],
   };
 }

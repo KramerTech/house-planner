@@ -1,3 +1,4 @@
+import { SCHEMA_VERSION } from '../model/defaults';
 import { migrateProject } from '../persistence/project-repository';
 
 describe('migrateProject', () => {
@@ -11,8 +12,10 @@ describe('migrateProject', () => {
       settings: { overhang: 2 },
     };
     const p = migrateProject(v1)!;
-    expect(p.schemaVersion).toBe(3);
+    expect(p.schemaVersion).toBe(SCHEMA_VERSION);
     expect(p.camera).toBeNull();
+    expect(p.floors).toHaveLength(1);
+    expect(p.floors[0].elevation).toBe(0);
     expect(p.checkpoints).toEqual([]);
     expect(p.activeCheckpointId).toBeNull();
     expect(p.settings.roofThickness).toBe(0.5);

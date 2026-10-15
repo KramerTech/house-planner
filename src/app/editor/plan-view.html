@@ -37,15 +37,32 @@
       <line class="low-edge" [attr.x1]="sv.lowEdge.x1" [attr.y1]="sv.lowEdge.y1" [attr.x2]="sv.lowEdge.x2" [attr.y2]="sv.lowEdge.y2" />
       <rect class="outline" [attr.x]="sv.x" [attr.y]="sv.y" [attr.width]="sv.w" [attr.height]="sv.h" />
       @if (sv.showDims) {
-        <text class="dim" [attr.x]="sv.cx" [attr.y]="sv.y + 14" text-anchor="middle">{{ sv.section.rect.w }}'</text>
+        <text class="dim" [attr.x]="sv.cx" [attr.y]="sv.y + 14" text-anchor="middle">{{ sv.clearW }}</text>
         <text
           class="dim"
           text-anchor="middle"
           [attr.transform]="'translate(' + (sv.x + 12) + ',' + sv.cy + ') rotate(-90)'"
-        >{{ sv.section.rect.d }}'</text>
+        >{{ sv.clearD }}</text>
       }
     </g>
   }
+
+  <g class="ext-dims">
+    @for (l of dims().ext; track $index) {
+      <line class="ext" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+    }
+    @for (l of dims().lines; track $index) {
+      <line [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+    }
+    @for (l of dims().ticks; track $index) {
+      <line class="tick" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+    }
+    @for (t of dims().labels; track $index) {
+      <text text-anchor="middle" [attr.transform]="'translate(' + t.x + ',' + t.y + ')' + (t.vertical ? ' rotate(-90)' : '')">
+        {{ t.text }}
+      </text>
+    }
+  </g>
 
   @for (l of freeSegLines(); track $index) {
     <line class="free-seg" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
@@ -90,8 +107,13 @@
 }
 
 <div class="area-summary" aria-label="Area summary">
-  <div class="row heated"><span>Heated</span><b>{{ area().heated.toLocaleString() }} sq ft</b></div>
-  <div class="row"><span>Unheated</span><b>{{ area().unheated.toLocaleString() }} sq ft</b></div>
+  <div class="row main"><span>Enclosed</span><b>{{ area().enclosed.toLocaleString() }} sq ft</b></div>
+  @if (area().upper > 0) {
+    <div class="row"><span>Upper floors</span><b>{{ area().upper.toLocaleString() }} sq ft</b></div>
+  }
+  @if (area().basement > 0) {
+    <div class="row"><span>Basement</span><b>{{ area().basement.toLocaleString() }} sq ft</b></div>
+  }
   <div class="row"><span>Covered</span><b>{{ area().covered.toLocaleString() }} sq ft</b></div>
   <div class="row total"><span>Total</span><b>{{ area().total.toLocaleString() }} sq ft</b></div>
   <div class="row roof"><span>Roof</span><b>{{ roofArea().toLocaleString() }} sq ft</b></div>

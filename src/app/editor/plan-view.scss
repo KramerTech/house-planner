@@ -75,6 +75,13 @@
   }
 }
 
+.ext-dims {
+  line { stroke: #5b6670; stroke-width: 1; }
+  .ext { stroke: #9aa4ad; }
+  .tick { stroke-width: 1.5; }
+  text { font-size: 11px; fill: #3b4a57; font-variant-numeric: tabular-nums; }
+}
+
 .free-seg {
   stroke: #16a34a;
   stroke-width: 3;
@@ -166,7 +173,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .heated b {
+  .main b {
     font-size: 14px;
   }
 

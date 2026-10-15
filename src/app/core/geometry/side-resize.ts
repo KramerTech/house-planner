@@ -2,7 +2,7 @@ import { WORLD_LIMIT } from '../model/defaults';
 import { Section, Side, SIDES } from '../model/types';
 import { validateLayout } from './constraints';
 import { reachableFrom } from './graph';
-import { interiorsOverlap, outwardSign, overlapLength, sideAxis, sideCoord, sideSpan, withSideAt } from './rect';
+import { interiorsOverlap, outwardSign, overlapLength, quantize, sideAxis, sideCoord, sideSpan, withSideAt } from './rect';
 
 /** One side of one section. */
 export interface SideRef {
@@ -99,17 +99,20 @@ export function resolveSideResize(
 
 /**
  * The contiguous range of coordinates the side can be dragged to, walking outward
- * one foot at a time from its current position in each direction.
+ * one snap `step` at a time (on the step's grid) from its current position.
  */
-export function sideResizeRange(original: readonly Section[], rootId: string, seed: SideRef): SideRange {
+export function sideResizeRange(original: readonly Section[], rootId: string, seed: SideRef, step = 1): SideRange {
   const section = original.find((s) => s.id === seed.sectionId);
   if (!section) throw new Error(`Unknown section ${seed.sectionId}`);
   const c = sideCoord(section.rect, seed.side);
   const reach = (dir: 1 | -1): number => {
     let last = c;
-    for (let step = 1; step <= 2 * WORLD_LIMIT; step++) {
-      if (!resolveSideResize(original, rootId, seed, c + dir * step)) break;
-      last = c + dir * step;
+    // First grid line beyond c in this direction, then one step at a time.
+    let n = dir > 0 ? Math.floor(c / step + 1e-9) + 1 : Math.ceil(c / step - 1e-9) - 1;
+    for (let i = 0; i < (2 * WORLD_LIMIT) / step; i++, n += dir) {
+      const v = quantize(n * step);
+      if (!resolveSideResize(original, rootId, seed, v)) break;
+      last = v;
     }
     return last;
   };

@@ -1,0 +1,229 @@
+<div
+  class="canvas"
+  #canvas
+  [style.cursor]="cursorStyle()"
+  (pointerdown)="onCanvasDown($event)"
+  (wheel)="onWheel($event)"
+  (pointerleave)="onPointerLeave()"
+  (contextmenu)="$event.preventDefault()"
+>
+  <svg class="plan" [attr.width]="size().x" [attr.height]="size().y">
+    <defs>
+      <pattern id="wv-minor" patternUnits="userSpaceOnUse" [attr.width]="grid().minor" [attr.height]="grid().minor" [attr.x]="grid().offsetX" [attr.y]="grid().offsetY">
+        <path [attr.d]="'M ' + grid().minor + ' 0 L 0 0 0 ' + grid().minor" class="grid-minor" />
+      </pattern>
+      <pattern id="wv-major" patternUnits="userSpaceOnUse" [attr.width]="grid().major" [attr.height]="grid().major" [attr.x]="grid().offsetX" [attr.y]="grid().offsetY">
+        <path [attr.d]="'M ' + grid().major + ' 0 L 0 0 0 ' + grid().major" class="grid-major" />
+      </pattern>
+      <pattern id="wv-earth" patternUnits="userSpaceOnUse" [attr.width]="hatch().size" [attr.height]="hatch().size" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" [attr.y2]="hatch().size" class="earth-hatch" [attr.stroke-width]="hatch().stroke" />
+      </pattern>
+    </defs>
+
+    <rect width="100%" height="100%" fill="url(#wv-minor)" />
+    <rect width="100%" height="100%" fill="url(#wv-major)" />
+
+    <g [attr.transform]="worldTransform()">
+      @if (roof()) {
+        <!-- Plan of the roofs, from above. -->
+        @for (s of roofSections(); track s.id) {
+          <rect class="roof" [class.patio]="s.patio" [attr.x]="s.x" [attr.y]="s.y" [attr.width]="s.w" [attr.height]="s.d" />
+          <path class="slope" [attr.d]="s.arrow" />
+        }
+        @for (k of skylightViews(); track k.id) {
+          <rect
+            class="glass"
+            [class.selected]="k.selected"
+            [class.invalid]="!k.valid"
+            [attr.x]="k.x0"
+            [attr.y]="k.y0"
+            [attr.width]="k.x1 - k.x0"
+            [attr.height]="k.y1 - k.y0"
+          />
+        }
+      } @else {
+        <!-- The face seen from outside: u along it, z up. -->
+        @if (groundBand(); as g) {
+          <rect class="earth" [attr.x]="g.u" y="-3" [attr.width]="g.w" height="3" />
+          <rect fill="url(#wv-earth)" [attr.x]="g.u" y="-3" [attr.width]="g.w" height="3" />
+        }
+        <path class="face" [attr.d]="faceShape()" />
+        @for (l of lowerRoofs(); track $index) {
+          <path class="lower-roof" [attr.d]="l" />
+        }
+        @for (fl of floorLines(); track fl.z) {
+          @if (face(); as f) {
+            <line class="floor-line" [class.ceiling]="fl.ceiling" [attr.x1]="f.from" [attr.x2]="f.to" [attr.y1]="fl.z" [attr.y2]="fl.z" />
+          }
+        }
+        @for (p of partitions(); track p.key) {
+          <rect class="partition" [class.divider]="p.divider" [attr.x]="p.u0" [attr.y]="p.z0" [attr.width]="p.u1 - p.u0" [attr.height]="p.z1 - p.z0" />
+        }
+        @for (d of doors(); track d.id) {
+          <rect
+            class="door"
+            [class.garage]="d.garage"
+            [class.opening]="d.opening"
+            [class.selected]="d.selected"
+            [class.invalid]="!d.valid"
+            [attr.x]="d.u0"
+            [attr.y]="d.z0"
+            [attr.width]="d.w"
+            [attr.height]="d.h"
+          />
+        }
+        @for (w of windowViews(); track w.id) {
+          <g class="window" [class.selected]="w.selected" [class.invalid]="!w.valid">
+            <path class="glass" [attr.d]="w.points" />
+            @if (w.sash; as s) {
+              <rect class="sash" [attr.x]="s.x" [attr.y]="s.y" [attr.width]="s.w" [attr.height]="s.h" />
+            }
+            @for (l of w.bars; track $index) {
+              <line class="bar" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+            }
+            @for (l of w.hinge; track $index) {
+              <line class="hinge" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+            }
+            <path class="outline" [attr.d]="w.points" />
+          </g>
+        }
+      }
+
+      @if (draft(); as d) {
+        <path class="draft" [class.invalid]="!d.valid" [attr.d]="d.path" />
+        @for (p of d.pts; track $index) {
+          <circle class="corner" [attr.cx]="p[0]" [attr.cy]="p[1]" [attr.r]="3.5 / view().scale" />
+        }
+      }
+      @for (g of cornerGuides(); track $index) {
+        <line class="guide" [class.on]="g.on" [attr.x1]="g.x1" [attr.y1]="g.y1" [attr.x2]="g.x2" [attr.y2]="g.y2" />
+      }
+      @for (h of handles(); track $index) {
+        <circle class="handle" [attr.cx]="h.u" [attr.cy]="h.z" [attr.r]="h.r" />
+      }
+    </g>
+
+    @for (l of guideViews().lines; track $index) {
+      <line class="snap-line" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+    }
+    @for (d of guideViews().dims; track $index) {
+      <g class="snap-dim">
+        <line [attr.x1]="d.x1" [attr.y1]="d.y1" [attr.x2]="d.x2" [attr.y2]="d.y2" />
+        @for (t of d.ticks; track $index) {
+          <line [attr.x1]="t.x1" [attr.y1]="t.y1" [attr.x2]="t.x2" [attr.y2]="t.y2" />
+        }
+        <rect [attr.x]="d.label.x - 17" [attr.y]="d.label.y - 8" width="34" height="16" rx="4" />
+        <text [attr.x]="d.label.x" [attr.y]="d.label.y" text-anchor="middle" dominant-baseline="central">{{ d.label.text }}</text>
+      </g>
+    }
+    @for (r of roomLabels(); track $index) {
+      <text class="room-label" [attr.x]="r.x" [attr.y]="r.y" text-anchor="middle" dominant-baseline="middle">{{ r.name }}</text>
+    }
+    @for (fl of floorLines(); track fl.z) {
+      <text class="floor-label" [class.ceiling]="fl.ceiling" [attr.x]="fl.at.x - 8" [attr.y]="fl.at.y" text-anchor="end" dominant-baseline="middle">{{ fl.label }}</text>
+    }
+  </svg>
+
+  <!-- Top left: which face. -->
+  <div class="face-bar ui">
+    <button type="button" class="step" (click)="stepFace(-1)" pTooltip="Previous wall (PgUp)" tooltipPosition="bottom" aria-label="Previous wall">
+      <i class="pi pi-chevron-left"></i>
+    </button>
+    <span class="face-name">{{ faceLabel() }}</span>
+    <button type="button" class="step" (click)="stepFace(1)" pTooltip="Next wall (PgDn)" tooltipPosition="bottom" aria-label="Next wall">
+      <i class="pi pi-chevron-right"></i>
+    </button>
+    <span class="sep"></span>
+    <button type="button" class="roof-btn" [class.active]="roof()" (click)="chooseFace(roof() ? faces()[0]?.key ?? '' : 'roof')" pTooltip="Skylights, on the roof" tooltipPosition="bottom">
+      Roof
+    </button>
+  </div>
+
+  <!-- Top right: tools, and the rectangle tool's sizes. -->
+  <div class="top-right">
+    <div class="toolbar ui">
+      @for (t of tools(); track t.id) {
+        <button type="button" class="tool" [class.active]="tool() === t.id" (click)="setTool(t.id)" [pTooltip]="t.tip" tooltipPosition="bottom">
+          <svg viewBox="0 0 20 20"><path [attr.d]="t.icon" /></svg>
+          {{ roof() && t.id === 'rect' ? 'Skylight' : t.label }}
+        </button>
+      }
+    </div>
+    @if (tool() === 'rect' && !roof()) {
+      <div class="toolbar options ui">
+        <span class="label">Size</span>
+        <select (change)="choosePreset($any($event.target).value)" aria-label="Window size">
+          <option value="" [selected]="!preset()">Drag any size</option>
+          @for (p of presets; track $index) {
+            <option [value]="$index" [selected]="preset() === p">{{ p[0] }}″ × {{ p[1] }}″</option>
+          }
+        </select>
+      </div>
+    }
+  </div>
+
+  <!-- Bottom left: the house from above, its walls to pick from. -->
+  <svg class="minimap ui" [attr.viewBox]="minimap().viewBox">
+    @for (r of minimap().house; track $index) {
+      <rect class="mm-house" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+    }
+    @for (f of minimap().faces; track f.key) {
+      <line
+        class="mm-face"
+        [class.clerestory]="f.clerestory"
+        [class.active]="f.active"
+        [attr.x1]="f.x1"
+        [attr.y1]="f.y1"
+        [attr.x2]="f.x2"
+        [attr.y2]="f.y2"
+        (click)="chooseFace(f.key)"
+      >
+        <title>{{ f.title }}</title>
+      </line>
+    }
+  </svg>
+
+  @if (selBar(); as sb) {
+    <div class="selbar ui" [style.left.px]="sb.x" [style.top.px]="sb.y">
+      <span class="sel-title">{{ sb.title }}</span>
+      @if (sb.window; as w) {
+        <select (change)="setStyle($any($event.target).value)" aria-label="Window style" pTooltip="How it opens" tooltipPosition="top">
+          @for (s of styles; track s.style) {
+            <option [value]="s.style" [selected]="w.style === s.style">{{ s.label }}</option>
+          }
+        </select>
+        @if (sb.lowerRoof && w.shape.t === 'roofline') {
+          <label class="follow" pTooltip="Run the bottom at the pitch of the roof below it" tooltipPosition="top">
+            <input type="checkbox" [checked]="w.shape.lower" (change)="setFollowLower($any($event.target).checked); $any($event.target).blur()" />
+            Follow lower roof
+          </label>
+        }
+        <span class="grille" pTooltip="Grille: panes across × down" tooltipPosition="top">
+          <button type="button" class="mini" (click)="setGrille('cols', -1)" aria-label="Fewer panes across">−</button>
+          {{ w.grille.cols }}
+          <button type="button" class="mini" (click)="setGrille('cols', 1)" aria-label="More panes across">+</button>
+          ×
+          <button type="button" class="mini" (click)="setGrille('rows', -1)" aria-label="Fewer panes down">−</button>
+          {{ w.grille.rows }}
+          <button type="button" class="mini" (click)="setGrille('rows', 1)" aria-label="More panes down">+</button>
+        </span>
+      }
+      @if (!sb.door) {
+        <button type="button" class="act" (click)="duplicateSelection()" pTooltip="Duplicate (Ctrl+D)" tooltipPosition="top"><i class="pi pi-clone"></i></button>
+        <button type="button" class="act danger" (click)="deleteSelection()" pTooltip="Delete (Del)" tooltipPosition="top"><i class="pi pi-trash"></i></button>
+      }
+    </div>
+  }
+
+  @if (!roof() && !face()) {
+    <div class="empty"><b>No walls yet</b> Add some sections in Footprint / Rooflines first.</div>
+  }
+
+  <div class="view-controls ui">
+    <button type="button" class="act" (click)="zoomBy(1 / 1.25)" pTooltip="Zoom out" tooltipPosition="top"><i class="pi pi-minus"></i></button>
+    <button type="button" class="act" (click)="zoomBy(1.25)" pTooltip="Zoom in" tooltipPosition="top"><i class="pi pi-plus"></i></button>
+    <button type="button" class="act" (click)="fit()" pTooltip="Fit" tooltipPosition="top"><i class="pi pi-expand"></i></button>
+  </div>
+
+  <div class="hint">{{ hint() }}</div>
+</div>

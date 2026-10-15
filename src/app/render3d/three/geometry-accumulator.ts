@@ -1,4 +1,4 @@
-import { BufferGeometry, Float32BufferAttribute, Vector3 } from 'three';
+import { BufferGeometry, Float32BufferAttribute, Matrix4, Vector3 } from 'three';
 
 const _ab = new Vector3();
 const _ac = new Vector3();
@@ -29,6 +29,15 @@ export class GeometryAccumulator {
   quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, outward: Vector3): void {
     this.triangle(a, b, c, outward);
     this.triangle(a, c, d, outward);
+  }
+
+  /** Appends another accumulator's triangles, each vertex moved by `m`. */
+  append(other: GeometryAccumulator, m: Matrix4): void {
+    const p = other.positions;
+    for (let i = 0; i < p.length; i += 3) {
+      _ab.set(p[i], p[i + 1], p[i + 2]).applyMatrix4(m);
+      this.positions.push(_ab.x, _ab.y, _ab.z);
+    }
   }
 
   toGeometry(): BufferGeometry {

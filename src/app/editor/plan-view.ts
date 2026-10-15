@@ -11,13 +11,16 @@ import {
 } from '@angular/core';
 import { ButtonModule } from '@openng/optimus-ui/button';
 import { TooltipModule } from '@openng/optimus-ui/tooltip';
-import { areaSummary } from '../core/geometry/area';
 import { buildBuildingModel } from '../render3d/build/building-builder';
 import { roofSurfaceArea } from '../render3d/build/roof-area';
-import { freeSegments, SideSegment } from '../core/geometry/edges';
+import { freeSegments, SideSegment, sideSegments } from '../core/geometry/edges';
 import { boundsOf, sideAxis, sideCoord, sideSpan } from '../core/geometry/rect';
 import { Rect, Section, Side } from '../core/model/types';
+import { EditorState } from '../core/state/editor-state';
 import { ProjectStore } from '../core/state/project-store';
+import { exteriorDims } from '../core/floorplan/exterior-dims';
+import { floorArea, grossAreas, openingsOf, outsideFootprint, regionOf, wallFootprint } from '../core/floorplan/floor-region';
+import { formatFeet } from '../core/model/format';
 import { freeSegmentNear, SideHandle, sidesNear } from './hit-test';
 import { SectionPanel } from './section-panel';
 import { ActiveSideDrag, beginSideDrag, DRAG_START_THRESHOLD_PX, dragValue, resolveHandle } from './side-drag';
@@ -28,6 +31,9 @@ const FULL_PANEL_MIN = { w: 200, h: 220 };
 const WHEEL_ZOOM_SPEED = 0.0015;
 /** Below this zoom level (percent) section panels are hidden to keep the plan legible. */
 const PANEL_MIN_ZOOM_PERCENT = 60;
+/** Exterior dimension strings: distance (px) of the first string from the building, and between strings. */
+const DIM_FIRST_PX = 30;
+const DIM_GAP_PX = 26;
 
 type Interaction =
   | { mode: 'idle' }
@@ -45,6 +51,13 @@ interface ScreenLine {
   y1: number;
   x2: number;
   y2: number;
+}
+
+interface DimLabel {
+  x: number;
+  y: number;
+  text: string;
+  vertical: boolean;
 }
 
 /**
@@ -75,10 +88,11 @@ interface ScreenLine {
 })
 export class PlanView {
   private readonly store = inject(ProjectStore);
+  private readonly editor = inject(EditorState);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   protected readonly size = signal<Point>({ x: 0, y: 0 });
-  protected readonly view = signal<Viewport>({ scale: 12, tx: 0, ty: 0 });
+  protected readonly view = computed<Viewport>(() => this.editor.planView() ?? { scale: 12, tx: 0, ty: 0 });
   protected readonly shiftHeld = signal(false);
   protected readonly hover = signal<Hover>(null);
   protected readonly expandedId = signal<string | null>(null);
@@ -106,6 +120,7 @@ export class PlanView {
   protected readonly sectionViews = computed(() => {
     const v = this.view();
     const rootId = this.rootId();
+    const clear = this.clearSizes();
     return this.sections().map((s) => {
       const tl = worldToScreen(v, { x: s.rect.x, y: s.rect.y });
       const w = s.rect.w * v.scale;
@@ -122,6 +137,8 @@ export class PlanView {
         compact: w < FULL_PANEL_MIN.w || h < FULL_PANEL_MIN.h,
         lowEdge: this.sideLine(s, s.roof.slopeDir, 4),
         showDims: w > 50 && h > 30,
+        clearW: formatFeet(clear.get(s.id)!.w),
+        clearD: formatFeet(clear.get(s.id)!.d),
       };
     });
   });
@@ -144,8 +161,9 @@ export class PlanView {
     const section = this.sections().find((s) => s.id === seed.sectionId);
     if (!section) return null;
     const line = this.sideLine(section, seed.side, 0);
-    const len = sideAxis(seed.side) === 'x' ? section.rect.w : section.rect.d;
-    return { x: (line.x1 + line.x2) / 2, y: (line.y1 + line.y2) / 2, text: `${len}'` };
+    const clear = this.clearSizes().get(section.id)!;
+    const len = sideAxis(seed.side) === 'x' ? clear.w : clear.d;
+    return { x: (line.x1 + line.x2) / 2, y: (line.y1 + line.y2) / 2, text: formatFeet(len) };
   });
 
   protected readonly freeSegLines = computed(() => {
@@ -172,7 +190,104 @@ export class PlanView {
     return 'grab';
   });
 
-  protected readonly area = computed(() => areaSummary(this.sections()));
+  /** Gross areas to the outside faces of the walls (and patio posts). */
+  protected readonly area = computed(() => {
+    const settings = this.store.settings();
+    const a = grossAreas(this.sections(), settings);
+    const floors = this.store.floors();
+    const areaOf = (pick: (elevation: number) => boolean) =>
+      Math.round(
+        floors.reduce((sum, f, i) => (pick(f.elevation) ? sum + floorArea(regionOf(this.sections(), settings, f), openingsOf(floors, i)) : sum), 0),
+      );
+    const [upper, basement] = [areaOf((e) => e > 0), areaOf((e) => e < 0)];
+    const [enclosed, covered] = [Math.round(a.enclosed), Math.round(a.covered)];
+    return { enclosed, upper, basement, covered, total: enclosed + covered + upper + basement };
+  });
+
+  /**
+   * Each section's clear inside size: its centerline size less half a wall (or post)
+   * on every side that has one. Sides shared with another enclosed section are open.
+   */
+  private readonly clearSizes = computed(() => {
+    const sections = this.sections();
+    const settings = this.store.settings();
+    const byId = new Map(sections.map((s) => [s.id, s]));
+    const out = new Map<string, { w: number; d: number }>();
+    for (const s of sections) {
+      const half = (s.patio.enabled ? settings.postSize : settings.wallThickness) / 2;
+      const built = (side: Side) =>
+        sideSegments(s, side, sections).some((seg) => {
+          const n = seg.neighborId ? byId.get(seg.neighborId) : undefined;
+          return !n || n.patio.enabled;
+        });
+      const cut = (side: Side) => (built(side) ? half : 0);
+      out.set(s.id, { w: s.rect.w - cut('W') - cut('E'), d: s.rect.d - cut('N') - cut('S') });
+    }
+    return out;
+  });
+
+  /**
+   * Exterior dimensions, outside the whole building: on every side, a string with
+   * one dimension per outside face of the house's walls — patios don't count, so a
+   * patio never hides the wall behind it — and, on the north and west, the overall
+   * size of everything (patios included) further out, unless that would just repeat
+   * a single wall dimension.
+   */
+  protected readonly dims = computed(() => {
+    const v = this.view();
+    const lines: ScreenLine[] = [];
+    const ext: ScreenLine[] = [];
+    const ticks: ScreenLine[] = [];
+    const labels: DimLabel[] = [];
+    const settings = this.store.settings();
+    const walls = new Map(exteriorDims(wallFootprint(this.sections(), settings)).map((d) => [d.side, d]));
+    for (const whole of exteriorDims(outsideFootprint(this.sections(), settings))) {
+      const sd = walls.get(whole.side) ?? whole;
+      const horizontal = sd.side === 'N' || sd.side === 'S';
+      const out = sd.side === 'N' || sd.side === 'W' ? -1 : 1;
+      const along = (a: number) => (horizontal ? worldToScreen(v, { x: a, y: 0 }).x : worldToScreen(v, { x: 0, y: a }).y);
+      const across = (c: number) => (horizontal ? worldToScreen(v, { x: 0, y: c }).y : worldToScreen(v, { x: c, y: 0 }).x);
+      const pt = (a: number, c: number) => (horizontal ? { x: a, y: c } : { x: c, y: a });
+      const seg = (a1: number, c1: number, a2: number, c2: number): ScreenLine => {
+        const p = pt(a1, c1);
+        const q = pt(a2, c2);
+        return { x1: p.x, y1: p.y, x2: q.x, y2: q.y };
+      };
+      const nearer = (f1: number, f2: number) => (out < 0 ? Math.min(f1, f2) : Math.max(f1, f2));
+
+      /** A dimension string through `stops` (along, face) at screen distance `at` across. */
+      const string = (stops: { a: number; face: number }[], at: number) => {
+        lines.push(seg(along(stops[0].a), at, along(stops.at(-1)!.a), at));
+        stops.forEach((st, i) => {
+          const a = along(st.a);
+          ext.push(seg(a, across(st.face) + out * 4, a, at + out * 6));
+          const slant = horizontal ? 4 : -4;
+          ticks.push(seg(a - 4, at + slant, a + 4, at - slant));
+          const next = stops[i + 1];
+          if (!next || Math.abs(along(next.a) - a) < 26) return;
+          const p = pt((a + along(next.a)) / 2, at - 5);
+          labels.push({ x: p.x, y: p.y, text: formatFeet(next.a - st.a), vertical: !horizontal });
+        });
+      };
+
+      const base = across(whole.extreme);
+      const stops = [{ a: sd.from, face: sd.pieces[0].face }];
+      sd.pieces.forEach((p, i) => {
+        const next = sd.pieces[i + 1];
+        stops.push({ a: p.to, face: next ? nearer(p.face, next.face) : p.face });
+      });
+      string(stops, base + out * DIM_FIRST_PX);
+      const repeats = sd.pieces.length === 1 && sd.from === whole.from && sd.to === whole.to;
+      if ((sd.side === 'N' || sd.side === 'W') && !repeats) {
+        const ends = [
+          { a: whole.from, face: whole.pieces[0].face },
+          { a: whole.to, face: whole.pieces.at(-1)!.face },
+        ];
+        string(ends, base + out * (DIM_FIRST_PX + DIM_GAP_PX));
+      }
+    }
+    return { lines, ext, ticks, labels };
+  });
   protected readonly roofArea = computed(() =>
     Math.round(roofSurfaceArea(buildBuildingModel({ sections: this.sections(), settings: this.store.settings() }))),
   );
@@ -185,7 +300,7 @@ export class PlanView {
       const { width, height } = entry.contentRect;
       const first = this.size().x === 0;
       this.size.set({ x: width, y: height });
-      if (first) this.fit();
+      if (first && !this.editor.planView()) this.fit();
     });
     afterNextRender(() => resize.observe(this.host.nativeElement));
     inject(DestroyRef).onDestroy(() => resize.disconnect());
@@ -206,7 +321,7 @@ export class PlanView {
 
   fit(): void {
     if (this.size().x === 0) return;
-    this.view.set(fitViewport(this.size(), this.contentBounds()));
+    this.editor.planView.set(fitViewport(this.size(), this.contentBounds()));
   }
 
   zoomBy(factor: number): void {
@@ -235,6 +350,7 @@ export class PlanView {
     const candidates = e.button === 0 ? sidesNear(this.sections(), this.view(), p) : [];
     this.capture(e);
     if (candidates.length) {
+      this.store.beginGesture();
       this.interaction.set({ mode: 'pending-side', pointerId: e.pointerId, start: p, candidates });
     } else {
       this.interaction.set({ mode: 'pan', pointerId: e.pointerId, start: p, startView: this.view() });
@@ -268,6 +384,7 @@ export class PlanView {
           this.sections(),
           this.store.sideRange(handle),
           screenToWorld(this.view(), it.start),
+          this.store.layoutStep(),
         );
         this.interaction.set({ mode: 'side', pointerId: it.pointerId, drag });
         this.applySideDrag(drag, p);
@@ -284,6 +401,7 @@ export class PlanView {
     const it = this.interaction();
     if (it.mode === 'idle' || it.pointerId !== e.pointerId) return;
     this.interaction.set({ mode: 'idle' });
+    if (it.mode === 'side' || it.mode === 'pending-side') this.store.endGesture();
     this.store.flush();
     this.updateHover(this.localPoint(e), e.shiftKey);
   }
@@ -333,7 +451,7 @@ export class PlanView {
   }
 
   private setView(v: Viewport): void {
-    this.view.set(clampPan(v, this.size(), this.contentBounds()));
+    this.editor.planView.set(clampPan(v, this.size(), this.contentBounds()));
   }
 
   private capture(e: PointerEvent): void {

@@ -1,0 +1,385 @@
+<app-furniture-panel (pick)="startPlacing($event)" />
+<div
+  class="canvas"
+  #canvas
+  [style.cursor]="cursorStyle()"
+  (pointerdown)="onCanvasDown($event)"
+  (wheel)="onWheel($event)"
+  (pointerleave)="onPointerLeave()"
+  (contextmenu)="$event.preventDefault()"
+>
+  <svg class="plan" [attr.width]="size().x" [attr.height]="size().y">
+    <defs>
+      <pattern id="fp-minor" patternUnits="userSpaceOnUse" [attr.width]="grid().minor" [attr.height]="grid().minor" [attr.x]="grid().offsetX" [attr.y]="grid().offsetY">
+        <path [attr.d]="'M ' + grid().minor + ' 0 L 0 0 0 ' + grid().minor" class="grid-minor" />
+      </pattern>
+      <pattern id="fp-major" patternUnits="userSpaceOnUse" [attr.width]="grid().major" [attr.height]="grid().major" [attr.x]="grid().offsetX" [attr.y]="grid().offsetY">
+        <path [attr.d]="'M ' + grid().major + ' 0 L 0 0 0 ' + grid().major" class="grid-major" />
+      </pattern>
+      <!-- Used inside the plan-unit group, so sized in feet for a constant on-screen spacing. -->
+      <pattern id="fp-hatch" patternUnits="userSpaceOnUse" [attr.width]="hatch().size" [attr.height]="hatch().size" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" [attr.y2]="hatch().size" class="hatch" [attr.stroke-width]="hatch().stroke" />
+      </pattern>
+      <pattern id="fp-earth" patternUnits="userSpaceOnUse" [attr.width]="hatch().size" [attr.height]="hatch().size" patternTransform="rotate(-45)">
+        <line x1="0" y1="0" x2="0" [attr.y2]="hatch().size" class="earth-hatch" [attr.stroke-width]="hatch().stroke" />
+      </pattern>
+    </defs>
+
+    <rect width="100%" height="100%" fill="url(#fp-minor)" />
+    <rect width="100%" height="100%" fill="url(#fp-major)" />
+
+    <g [attr.transform]="worldTransform()">
+      @for (r of patios(); track $index) {
+        <rect class="patio" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+      }
+      @if (below(); as b) {
+        <g class="below">
+          @for (r of b.footprint; track $index) {
+            <rect class="below-outline" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+          }
+        </g>
+      }
+      @if (above(); as a) {
+        @for (r of a.undug; track $index) {
+          <rect class="undug" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+          <rect fill="url(#fp-earth)" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+        }
+        @for (r of a.outline; track $index) {
+          <rect class="above-outline" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+        }
+      }
+      @for (r of region().footprint; track $index) {
+        <rect class="ext-wall" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+      }
+      @for (r of region().interior; track $index) {
+        <rect class="floor" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+      }
+      @for (m of windowMarks(); track m.id) {
+        <g class="win-mark">
+          <rect [attr.x]="m.box.x0" [attr.y]="m.box.y0" [attr.width]="m.box.x1 - m.box.x0" [attr.height]="m.box.y1 - m.box.y0" />
+          <line [attr.x1]="m.line.x1" [attr.y1]="m.line.y1" [attr.x2]="m.line.x2" [attr.y2]="m.line.y2" />
+        </g>
+      }
+      @for (r of openOutline(); track $index) {
+        <rect class="floor" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+        <rect class="opening-fill" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+        <rect fill="url(#fp-hatch)" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+      }
+      @if (above(); as a) {
+        @for (r of a.walls; track $index) {
+          <rect class="above-wall" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+        }
+      }
+      @if (below(); as b) {
+        <g class="below">
+          @for (r of b.walls; track $index) {
+            <rect class="below-wall" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+          }
+          @for (it of b.items; track it.id) {
+            <g class="below-item" [attr.transform]="it.transform" [appItemSymbol]="it.prims" [style.--tint]="it.tint" />
+          }
+        </g>
+      }
+
+      @for (so of stairOpens(); track $index) {
+        <rect class="opening-fill" [attr.x]="so.b.x0" [attr.y]="so.b.y0" [attr.width]="so.b.x1 - so.b.x0" [attr.height]="so.b.y1 - so.b.y0" />
+        <rect class="opening" [attr.x]="so.b.x0" [attr.y]="so.b.y0" [attr.width]="so.b.x1 - so.b.x0" [attr.height]="so.b.y1 - so.b.y0" />
+      }
+      @for (op of openings(); track op.o.id) {
+        @if (!basement()) {
+          <rect class="opening-fill" [attr.x]="op.o.x0" [attr.y]="op.o.y0" [attr.width]="op.o.x1 - op.o.x0" [attr.height]="op.o.y1 - op.o.y0" />
+        }
+        <rect
+          class="opening"
+          [class.area]="basement()"
+          [class.selected]="op.selected"
+          [attr.x]="op.o.x0"
+          [attr.y]="op.o.y0"
+          [attr.width]="op.o.x1 - op.o.x0"
+          [attr.height]="op.o.y1 - op.o.y0"
+        />
+      }
+
+      @for (a of arrivals(); track a.id) {
+        <g [attr.transform]="a.transform" [appItemSymbol]="a.prims" [style.--tint]="a.tint" />
+        @if (a.selected) {
+          <rect class="sel-outline" [attr.x]="a.box.x0" [attr.y]="a.box.y0" [attr.width]="a.box.x1 - a.box.x0" [attr.height]="a.box.y1 - a.box.y0" />
+        }
+      }
+
+      @for (it of items(); track it.id) {
+        <g [attr.transform]="it.transform" [appItemSymbol]="it.prims" [style.--tint]="it.tint" />
+        @if (it.selected) {
+          <rect
+            class="sel-outline"
+            [attr.transform]="it.transform"
+            [attr.x]="it.box.x0"
+            [attr.y]="it.box.y0"
+            [attr.width]="it.box.x1 - it.box.x0"
+            [attr.height]="it.box.y1 - it.box.y0"
+          />
+        }
+      }
+      @if (itemsOutline(); as b) {
+        <rect class="sel-group" [attr.x]="b.x0 - 0.25" [attr.y]="b.y0 - 0.25" [attr.width]="b.x1 - b.x0 + 0.5" [attr.height]="b.y1 - b.y0 + 0.5" />
+      }
+
+      @for (w of walls(); track w.id) {
+        @if (w.divider) {
+          <g class="divider" [class.selected]="w.selected" [class.hover]="w.hover" [class.misfit]="w.misfit">
+            <rect class="hit" [attr.x]="w.box.x0" [attr.y]="w.box.y0" [attr.width]="w.box.x1 - w.box.x0" [attr.height]="w.box.y1 - w.box.y0" />
+            <line [attr.x1]="w.line.x1" [attr.y1]="w.line.y1" [attr.x2]="w.line.x2" [attr.y2]="w.line.y2" />
+          </g>
+        } @else {
+          <rect
+            class="wall"
+            [class.selected]="w.selected"
+            [class.hover]="w.hover"
+            [class.misfit]="w.misfit"
+            [attr.x]="w.box.x0"
+            [attr.y]="w.box.y0"
+            [attr.width]="w.box.x1 - w.box.x0"
+            [attr.height]="w.box.y1 - w.box.y0"
+          />
+        }
+      }
+
+      @for (d of doorViews(); track d.id) {
+        <g class="door" [class.selected]="d.selected" [class.hover]="d.hover" [class.invalid]="!d.valid">
+          <rect class="gap" [attr.x]="d.gap.x0" [attr.y]="d.gap.y0" [attr.width]="d.gap.x1 - d.gap.x0" [attr.height]="d.gap.y1 - d.gap.y0" />
+          <path class="arc" [attr.d]="d.arc" />
+          <path class="dashed" [attr.d]="d.dashed" />
+          <path class="solid" [attr.d]="d.solid" />
+        </g>
+      }
+
+      @for (n of nodes(); track n.id) {
+        <circle class="node" [class.active]="n.active" [attr.cx]="n.x" [attr.cy]="n.y" [attr.r]="n.r" />
+      }
+
+      @if (cornerHighlight(); as b) {
+        <rect class="corner-hl" [attr.x]="b.x0" [attr.y]="b.y0" [attr.width]="b.x1 - b.x0" [attr.height]="b.y1 - b.y0" />
+      }
+      @if (wallPreview(); as wp) {
+        <rect
+          class="wall-preview"
+          [class.invalid]="!wp.valid"
+          [attr.x]="wp.box.x0"
+          [attr.y]="wp.box.y0"
+          [attr.width]="wp.box.x1 - wp.box.x0"
+          [attr.height]="wp.box.y1 - wp.box.y0"
+        />
+      }
+      @if (doorGhost(); as g) {
+        <g class="door ghost" [class.invalid]="!g.valid">
+          <rect class="gap" [attr.x]="g.gap.x0" [attr.y]="g.gap.y0" [attr.width]="g.gap.x1 - g.gap.x0" [attr.height]="g.gap.y1 - g.gap.y0" />
+          <path class="arc" [attr.d]="g.arc" />
+          <path class="dashed" [attr.d]="g.dashed" />
+          <path class="solid" [attr.d]="g.solid" />
+        </g>
+      }
+      @if (openingDraft(); as b) {
+        <rect class="opening draft" [attr.x]="b.x0" [attr.y]="b.y0" [attr.width]="b.x1 - b.x0" [attr.height]="b.y1 - b.y0" />
+      }
+      @if (placingGhost(); as g) {
+        <g class="ghost-item" [attr.transform]="g.transform" [appItemSymbol]="g.prims" [style.--tint]="g.tint" />
+      }
+    </g>
+
+    @for (l of guides(); track $index) {
+      <line class="guide" [attr.x1]="l.x1" [attr.y1]="l.y1" [attr.x2]="l.x2" [attr.y2]="l.y2" />
+    }
+    @for (so of stairOpens(); track $index) {
+      <text
+        class="opening-label"
+        text-anchor="middle"
+        dominant-baseline="middle"
+        [attr.transform]="'translate(' + so.label.x + ',' + so.label.y + ')' + (so.vertical ? ' rotate(-90)' : '')"
+      >Stair opening</text>
+    }
+    @for (op of openings(); track op.o.id) {
+      <text class="opening-label" [class.area]="basement()" [attr.x]="op.label.x" [attr.y]="op.label.y" text-anchor="middle" dominant-baseline="middle">
+        {{ op.text }}
+      </text>
+    }
+    @for (r of roomLabels(); track $index) {
+      @if (r.name) {
+        <text [attr.x]="r.x" [attr.y]="r.y - 16" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="700" fill="#1f2933">
+          {{ r.name }}
+        </text>
+      }
+      <text class="room-area" [attr.x]="r.x" [attr.y]="r.y" text-anchor="middle" dominant-baseline="middle">{{ r.area }}</text>
+      @if (r.dims) {
+        <text class="room-dims" [attr.x]="r.x" [attr.y]="r.y + 14" text-anchor="middle" dominant-baseline="middle">{{ r.dims }}</text>
+      }
+    }
+    @if (snapMarker(); as m) {
+      <circle class="snap" [class.connect]="m.kind === 'node' || m.kind === 'wall' || m.kind === 'face'" [attr.cx]="m.x" [attr.cy]="m.y" r="5" />
+    }
+    @if (tape(); as t) {
+      <g class="tape">
+        <line [attr.x1]="t.line.x1" [attr.y1]="t.line.y1" [attr.x2]="t.line.x2" [attr.y2]="t.line.y2" stroke="#b45309" stroke-width="1.5" />
+        @for (k of t.ticks; track $index) {
+          <line [attr.x1]="k.x1" [attr.y1]="k.y1" [attr.x2]="k.x2" [attr.y2]="k.y2" stroke="#b45309" stroke-width="2" />
+        }
+        <g class="len-label" [attr.transform]="'translate(' + t.label.x + ',' + (t.label.y + 9) + ')'">
+          <rect [attr.x]="-t.label.w / 2" y="-28" [attr.width]="t.label.w" height="18" rx="4" style="fill: #b45309" />
+          <text y="-15" text-anchor="middle">{{ t.label.text }}</text>
+        </g>
+      </g>
+    }
+    @if (wallPreview(); as wp) {
+      <g class="len-label" [attr.transform]="'translate(' + wp.label.x + ',' + wp.label.y + ')'">
+        <rect x="-30" y="-28" width="60" height="18" rx="4" />
+        <text y="-15" text-anchor="middle">{{ wp.label.text }}</text>
+      </g>
+    }
+  </svg>
+
+  @if (naming(); as n) {
+    <input
+      class="room-input ui"
+      #nameInput
+      [style.left.px]="namingBox()!.x"
+      [style.top.px]="namingBox()!.y - 16"
+      [value]="n.value"
+      placeholder="Room name"
+      (input)="naming.set({ room: n.room, at: n.at, value: nameInput.value })"
+      (keydown)="onNameKey($event)"
+      (blur)="commitName()"
+      style="position: absolute; z-index: 30; transform: translate(-50%, -50%); width: 160px; padding: 3px 6px; font: inherit; font-size: 13px; font-weight: 700; text-align: center; border: 1.5px solid #2563eb; border-radius: 6px; outline: none"
+    />
+  }
+
+  <!-- Top right: the tools, the current tool's options under them, then the floor summary. -->
+  <div class="top-right">
+    <div class="toolbar ui">
+      @for (t of tools(); track t.id) {
+        <button
+          type="button"
+          class="tool"
+          [class.active]="tool() === t.id"
+          [disabled]="t.id === 'opening' && !areaToolUsable()"
+          (click)="setTool(t.id)"
+          [pTooltip]="t.id === 'opening' && !areaToolUsable() ? 'Only floors with a floor below can open to it' : t.tip"
+          tooltipPosition="bottom"
+        >
+          <svg viewBox="0 0 20 20"><path class="f" [attr.d]="t.fill" /><path class="s" [attr.d]="t.stroke" /></svg>
+          {{ t.label }}
+        </button>
+      }
+    </div>
+    @if (tool() === 'door' || tool() === 'wall') {
+      <div class="toolbar options ui">
+        @if (tool() === 'door') {
+          <app-door-options
+            [kind]="doorKind()"
+            [width]="doorWidth()"
+            [height]="doorHeight()"
+            (kindChange)="setDoorKind($event)"
+            (widthChange)="setDoorWidth($event)"
+            (heightChange)="setDoorHeight($event)"
+          />
+        } @else {
+          <button type="button" class="act" [class.active]="wallKind() === 'wall'" (click)="wallKind.set('wall')" pTooltip="Draw walls" tooltipPosition="bottom">
+            <svg viewBox="0 0 16 16"><path class="s" [attr.d]="icons.wall" /></svg>
+          </button>
+          <button
+            type="button"
+            class="act"
+            [class.active]="wallKind() === 'divider'"
+            (click)="wallKind.set('divider')"
+            pTooltip="Draw room dividers: they split rooms (to name them) but aren't built"
+            tooltipPosition="bottom"
+          >
+            <svg viewBox="0 0 16 16"><path class="s" [attr.d]="icons.divider" /></svg>
+          </button>
+        }
+      </div>
+    }
+    <div class="summary ui">
+      <div class="title">
+        {{ floorName() }}
+        <span class="muted">· {{ basement() ? feet(-floor().elevation) + ' deep' : 'starts at ' + feet(floor().elevation) }}</span>
+      </div>
+      <div class="row"><span>Floor area</span><b>{{ area().toLocaleString() }} sq ft</b></div>
+      <div class="row"><span>Rooms</span><b>{{ rooms().length }}</b></div>
+      @if (misfits().size > 0) {
+        <div class="warn"><i class="pi pi-exclamation-triangle"></i> {{ misfits().size }} wall{{ misfits().size > 1 ? 's' : '' }} outside the floor</div>
+      }
+    </div>
+  </div>
+
+  <app-floor-stack class="stack" />
+
+  @if (selBar(); as sb) {
+    <div class="selbar ui" [style.left.px]="sb.x" [style.top.px]="sb.y">
+      @if (sb.title) {
+        <span class="sel-title">{{ sb.title }}</span>
+      }
+      @if (sb.kind === 'door' && sb.door) {
+        <app-door-options
+          [kind]="sb.door.kind"
+          [width]="sb.door.width"
+          [height]="sb.door.height ?? 7"
+          (kindChange)="setDoorKind($event)"
+          (widthChange)="setDoorWidth($event)"
+          (heightChange)="setDoorHeight($event)"
+        />
+        <button type="button" class="act" (click)="flipDoor()" pTooltip="Flip swing (or click the door)" tooltipPosition="top"><i class="pi pi-sync"></i></button>
+      }
+      @if (sb.kind === 'item') {
+        <button type="button" class="act" (click)="rotateSelection()" pTooltip="Rotate (R)" tooltipPosition="top"><i class="pi pi-replay"></i></button>
+        <button type="button" class="act" (click)="duplicateSelection()" pTooltip="Duplicate (Ctrl+D)" tooltipPosition="top"><i class="pi pi-clone"></i></button>
+        @if (sb.grouping) {
+          <button
+            type="button"
+            class="act"
+            (click)="toggleGroup()"
+            [pTooltip]="sb.grouping === 'group' ? 'Group (G)' : 'Ungroup (G)'"
+            tooltipPosition="top"
+          >
+            <svg viewBox="0 0 16 16"><path class="s" [attr.d]="sb.grouping === 'group' ? icons.group : icons.ungroup" /></svg>
+          </button>
+        }
+      }
+      @if (sb.kind === 'stair') {
+        <button type="button" class="act" (click)="rotateSelection()" pTooltip="Rotate (R)" tooltipPosition="top"><i class="pi pi-replay"></i></button>
+      }
+      @if (sb.kind === 'wall') {
+        <button
+          type="button"
+          class="act"
+          [class.active]="sb.divider"
+          (click)="toggleDivider()"
+          [pTooltip]="sb.divider ? 'Make it a wall' : 'Make it a room divider (splits rooms, isn’t built)'"
+          tooltipPosition="top"
+        >
+          <svg viewBox="0 0 16 16"><path class="s" [attr.d]="icons.divider" /></svg>
+        </button>
+      }
+      <button type="button" class="act danger" (click)="deleteSelection()" pTooltip="Delete (Del)" tooltipPosition="top"><i class="pi pi-trash"></i></button>
+    </div>
+  }
+
+  @if (noRoom()) {
+    <div class="empty">
+      @if (basement()) {
+        <b>Nothing dug out</b>
+        The whole basement is marked not dug out. Select and delete an undug area to open it back up.
+      } @else {
+        <b>No floor space here</b>
+        Nowhere under the roof has {{ feet(8) }} of headroom above {{ feet(floor().elevation) }}. Lower this floor, or raise walls or
+        pitch in Footprint / Rooflines.
+      }
+    </div>
+  }
+
+  <div class="view-controls ui">
+    <p-button icon="pi pi-minus" severity="secondary" size="small" [text]="true" (onClick)="zoomBy(1 / 1.25)" pTooltip="Zoom out" />
+    <p-button icon="pi pi-plus" severity="secondary" size="small" [text]="true" (onClick)="zoomBy(1.25)" pTooltip="Zoom in" />
+    <p-button icon="pi pi-expand" severity="secondary" size="small" [text]="true" (onClick)="fit()" pTooltip="Fit to plan" />
+  </div>
+
+  <div class="hint">{{ hint() }} · <b>Alt</b> for 1″ snapping</div>
+</div>

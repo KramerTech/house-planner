@@ -6,6 +6,21 @@ export interface Interval {
   hi: number;
 }
 
+/**
+ * Layout coordinates live on a 1/1024 ft grid (binary-exact), so sums and
+ * differences of coordinates compare exactly no matter what snap step is in use.
+ */
+export const quantize = (v: number): number => Math.round(v * 1024) / 1024 + 0;
+
+/**
+ * Default drag snap: half a wall thickness. Section edges are wall centerlines, so
+ * this lets an outside face (centerline ± half a wall) land on a round number.
+ */
+export const layoutStep = (wallThickness: number): number => wallThickness / 2;
+
+/** Snaps a coordinate to the nearest multiple of `step`, on the layout grid. */
+export const snapLayout = (v: number, step: number): number => quantize(Math.round(v / step) * step);
+
 export const x0 = (r: Rect) => r.x;
 export const x1 = (r: Rect) => r.x + r.w;
 export const y0 = (r: Rect) => r.y;

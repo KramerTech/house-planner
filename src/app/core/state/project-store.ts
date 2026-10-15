@@ -1,34 +1,67 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
+import { exteriorFaces, followWindows, syncRooflines } from '../floorplan/faces';
+import { groundIndex, isBasement, nextFloorElevation, regionOf } from '../floorplan/floor-region';
+import { shapeCenterU } from '../floorplan/windows';
+import { followOutline } from '../floorplan/wall-graph';
 import { canDeleteSection, planSectionFromSegment, validateLayout } from '../geometry/constraints';
 import { SideSegment } from '../geometry/edges';
+import { layoutStep } from '../geometry/rect';
 import { resolveSideResize, SideRange, sideResizeRange, SideRef } from '../geometry/side-resize';
-import { createProject, createSection, newId } from '../model/defaults';
+import { BASEMENT, createFloor, createProject, createSection, newId, STORY } from '../model/defaults';
 import {
   CameraState,
   Checkpoint,
   DesignSnapshot,
+  Floor,
+  HouseWindow,
   PatioSpec,
   Project,
   ProjectMeta,
   ProjectSettings,
   RoofSpec,
   Section,
+  Skylight,
 } from '../model/types';
 import { ProjectRepository } from '../persistence/project-repository';
 import { decodeShareCode, encodeShareCode } from '../persistence/share-code';
 
 const SAVE_DEBOUNCE_MS = 250;
+/** Edits closer together than this (outside a gesture) undo as one step. */
+const HISTORY_DEBOUNCE_MS = 400;
+const HISTORY_LIMIT = 200;
 const DEFAULT_PROJECT_NAME = 'My Home';
 
+/** The parts of a project that undo/redo and checkpoints track (camera excluded). */
+type DesignState = Pick<DesignSnapshot, 'rootId' | 'sections' | 'floors' | 'settings' | 'windows' | 'skylights'>;
+
 /** Identity of a design for change detection (camera excluded). */
-function designKey(d: Pick<DesignSnapshot, 'rootId' | 'sections' | 'settings'>): string {
-  return JSON.stringify([d.rootId, d.sections, d.settings]);
+function designKey(d: DesignState): string {
+  return JSON.stringify([d.rootId, d.sections, d.floors, d.settings, d.windows, d.skylights]);
 }
+
+const stateOf = (p: DesignState): DesignState => ({
+  rootId: p.rootId,
+  sections: p.sections,
+  floors: p.floors,
+  settings: p.settings,
+  windows: p.windows,
+  skylights: p.skylights,
+});
+
+const sameState = (a: DesignState, b: DesignState) =>
+  a.rootId === b.rootId &&
+  a.sections === b.sections &&
+  a.floors === b.floors &&
+  a.settings === b.settings &&
+  a.windows === b.windows &&
+  a.skylights === b.skylights;
 
 /**
  * Single source of truth for the open project. All mutations go through here; layout
  * mutations are validated against the layout invariants before being committed, and
- * every change is persisted (debounced) to localStorage.
+ * every change is persisted (debounced) to localStorage. Design changes are recorded
+ * for undo/redo: everything between `beginGesture` and `endGesture` (a drag) is one
+ * step, and other edits in quick succession coalesce.
  */
 @Injectable({ providedIn: 'root' })
 export class ProjectStore {
@@ -39,13 +72,26 @@ export class ProjectStore {
   private readonly _viewEpoch = signal(0);
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private undoStack: DesignState[] = [];
+  private redoStack: DesignState[] = [];
+  private readonly _historyVersion = signal(0);
+  /** The design before the edits not yet recorded as an undo step. */
+  private pendingBase: DesignState | null = null;
+  private historyTimer: ReturnType<typeof setTimeout> | null = null;
+  private gestureDepth = 0;
+
   readonly project = this._project.asReadonly();
   readonly projects = this._projects.asReadonly();
   readonly sections = computed(() => this._project().sections);
+  readonly floors = computed(() => this._project().floors);
+  readonly windows = computed(() => this._project().windows);
+  readonly skylights = computed(() => this._project().skylights);
   readonly settings = computed(() => this._project().settings);
   readonly rootId = computed(() => this._project().rootId);
   readonly checkpoints = computed(() => this._project().checkpoints);
   readonly activeCheckpointId = computed(() => this._project().activeCheckpointId);
+  readonly canUndo = computed(() => (this._historyVersion(), this.undoStack.length > 0 || this.pendingBase !== null));
+  readonly canRedo = computed(() => (this._historyVersion(), this.redoStack.length > 0));
 
   /**
    * Incremented whenever the design is replaced wholesale (project opened, checkpoint
@@ -79,19 +125,17 @@ export class ProjectStore {
     const loaded = this.repo.loadProject(id);
     if (!loaded) return;
     this.flush();
-    this._project.set(loaded);
+    this.replaceProject(loaded);
     this.repo.setLastOpenId(id);
-    this.bumpViewEpoch();
   }
 
   newProject(name: string): void {
     this.flush();
     const project = createProject(name.trim() || 'Untitled');
-    this._project.set(project);
+    this.replaceProject(project);
     this.repo.saveProject(project);
     this.repo.setLastOpenId(project.id);
     this.refreshIndex();
-    this.bumpViewEpoch();
   }
 
   deleteProject(id: string): void {
@@ -134,11 +178,10 @@ export class ProjectStore {
     const { name, ...snapshot } = design;
     this.flush();
     const project: Project = { ...createProject(name), ...snapshot };
-    this._project.set(project);
+    this.replaceProject(project);
     this.repo.saveProject(project);
     this.repo.setLastOpenId(project.id);
     this.refreshIndex();
-    this.bumpViewEpoch();
   }
 
   // ---------------------------------------------------------------- checkpoints
@@ -171,7 +214,7 @@ export class ProjectStore {
       console.warn(`Checkpoint ${id} has an invalid layout: ${violation}`);
       return false;
     }
-    this.update((p) => ({ ...p, ...snap, activeCheckpointId: id }));
+    this.update((p) => ({ ...p, ...snap, activeCheckpointId: id }), { follow: false });
     this.flush();
     this.bumpViewEpoch();
     return true;
@@ -183,7 +226,7 @@ export class ProjectStore {
         ...p,
         checkpoints: p.checkpoints.map((c) => (c.id === id ? { ...c, name: name.trim() || c.name } : c)),
       }),
-      false,
+      { touch: false },
     );
   }
 
@@ -194,15 +237,43 @@ export class ProjectStore {
         checkpoints: p.checkpoints.filter((c) => c.id !== id),
         activeCheckpointId: p.activeCheckpointId === id ? null : p.activeCheckpointId,
       }),
-      false,
+      { touch: false },
     );
+  }
+
+  // ---------------------------------------------------------------- undo / redo
+
+  /** Marks the start of a continuous edit (a drag); it undoes as one step. */
+  beginGesture(): void {
+    this.gestureDepth++;
+  }
+
+  endGesture(): void {
+    this.gestureDepth = Math.max(0, this.gestureDepth - 1);
+    if (this.gestureDepth === 0) this.commitHistory();
+  }
+
+  undo(): void {
+    this.commitHistory();
+    const prev = this.undoStack.pop();
+    if (!prev) return;
+    this.redoStack.push(stateOf(this._project()));
+    this.applyHistory(prev);
+  }
+
+  redo(): void {
+    this.commitHistory();
+    const next = this.redoStack.pop();
+    if (!next) return;
+    this.undoStack.push(stateOf(this._project()));
+    this.applyHistory(next);
   }
 
   // ---------------------------------------------------------------- camera
 
   /** Records the 3D camera pose. Not a design change, so it doesn't touch `updatedAt`. */
   setCamera(camera: CameraState): void {
-    this.update((p) => ({ ...p, camera }), false);
+    this.update((p) => ({ ...p, camera }), { touch: false });
   }
 
   // ---------------------------------------------------------------- settings & specs
@@ -215,29 +286,24 @@ export class ProjectStore {
     this.updateSection(sectionId, (s) => ({ ...s, roof: { ...s.roof, ...patch } }));
   }
 
-  /** Marks a section unheated or heated. A heated section can't be a patio, so this also clears patio. */
+  /** Marks a section unheated or heated. Not exposed in the UI for now. */
   setUnheated(sectionId: string, unheated: boolean): void {
-    this.updateSection(sectionId, (s) => ({
-      ...s,
-      unheated,
-      patio: unheated ? s.patio : { ...s.patio, enabled: false },
-    }));
+    this.updateSection(sectionId, (s) => ({ ...s, unheated }));
   }
 
-  /** Patio can only be enabled on an unheated section. */
   updatePatio(sectionId: string, patch: Partial<PatioSpec>): void {
-    this.updateSection(sectionId, (s) => {
-      const patio = { ...s.patio, ...patch };
-      return { ...s, patio: { ...patio, enabled: patio.enabled && s.unheated } };
-    });
+    this.updateSection(sectionId, (s) => ({ ...s, patio: { ...s.patio, ...patch } }));
   }
 
   // ---------------------------------------------------------------- layout
 
+  /** Drag snap step for section sides: half a wall thickness. */
+  readonly layoutStep = computed(() => layoutStep(this.settings().wallThickness));
+
   /** Where `seed` can be dragged to, given the current layout. */
   sideRange(seed: SideRef): SideRange {
     const p = this._project();
-    return sideResizeRange(p.sections, p.rootId, seed);
+    return sideResizeRange(p.sections, p.rootId, seed, this.layoutStep());
   }
 
   /**
@@ -277,6 +343,77 @@ export class ProjectStore {
     return this.commitLayout(this._project().sections.filter((s) => s.id !== sectionId));
   }
 
+  // ---------------------------------------------------------------- floors
+
+  /** Applies an edit to one floor's interior layout. */
+  updateFloor(floorId: string, fn: (f: Floor) => Floor): void {
+    this.update((p) => ({ ...p, floors: p.floors.map((f) => (f.id === floorId ? fn(f) : f)) }));
+  }
+
+  /** Elevation a new top floor would get, or null if the roof leaves no headroom for one. */
+  readonly nextFloorElevation = computed(() => nextFloorElevation(this.sections(), this.floors()));
+
+  /** Adds a floor on top. Returns its id, or null if there's no headroom for it. */
+  addFloor(): string | null {
+    const elevation = this.nextFloorElevation();
+    if (elevation === null) return null;
+    const floor = createFloor(elevation);
+    this.update((p) => ({ ...p, floors: [...p.floors, floor] }));
+    return floor.id;
+  }
+
+  /** Adds a basement under the ground floor, matching it. Returns its id, or null if there already is one. */
+  addBasement(): string | null {
+    if (this.floors().some(isBasement)) return null;
+    const floor = createFloor(-BASEMENT.defaultDepth);
+    this.update((p) => ({ ...p, floors: [floor, ...p.floors] }));
+    return floor.id;
+  }
+
+  /** Deletes a basement or upper floor (never the ground floor). */
+  deleteFloor(floorId: string): void {
+    this.update((p) => {
+      const g = groundIndex(p.floors);
+      return { ...p, floors: p.floors.filter((f, i) => i === g || f.id !== floorId) };
+    });
+  }
+
+  /**
+   * Sets a floor's starting height. An upper floor stays at least a story above the
+   * floor below, and floors above are pushed up as needed to keep a story between
+   * each; a basement stays within its depth limits. The ground floor stays at 0.
+   */
+  setFloorElevation(floorId: string, elevation: number): void {
+    this.update((p) => {
+      const i = p.floors.findIndex((f) => f.id === floorId);
+      const g = groundIndex(p.floors);
+      if (i < 0 || i === g) return p;
+      const floors = [...p.floors];
+      if (i < g) {
+        floors[i] = { ...floors[i], elevation: Math.min(-BASEMENT.minDepth, Math.max(-BASEMENT.maxDepth, elevation)) };
+        return { ...p, floors };
+      }
+      floors[i] = { ...floors[i], elevation: Math.max(floors[i - 1].elevation + STORY.minHeight, elevation) };
+      for (let j = i + 1; j < floors.length; j++) {
+        const min = floors[j - 1].elevation + STORY.minHeight;
+        if (floors[j].elevation < min) floors[j] = { ...floors[j], elevation: min };
+      }
+      return { ...p, floors };
+    });
+  }
+
+  // ---------------------------------------------------------------- windows
+
+  /** Applies an edit to the windows. */
+  updateWindows(fn: (windows: HouseWindow[]) => HouseWindow[]): void {
+    this.update((p) => ({ ...p, windows: fn(p.windows) }));
+  }
+
+  /** Applies an edit to the skylights. */
+  updateSkylights(fn: (skylights: Skylight[]) => Skylight[]): void {
+    this.update((p) => ({ ...p, skylights: fn(p.skylights) }));
+  }
+
   // ---------------------------------------------------------------- internals
 
   private commitLayout(sections: Section[]): boolean {
@@ -293,9 +430,72 @@ export class ProjectStore {
     this.update((p) => ({ ...p, sections: p.sections.map((s) => (s.id === id ? fn(s) : s)) }));
   }
 
-  private update(fn: (p: Project) => Project, touch = true): void {
-    this._project.update((p) => (touch ? { ...fn(p), updatedAt: Date.now() } : fn(p)));
+  /**
+   * Applies a change. `touch` marks it as a design edit (updatedAt, undo history);
+   * `follow` carries interior walls along when the outline changes.
+   */
+  private update(fn: (p: Project) => Project, opts: { touch?: boolean; follow?: boolean } = {}): void {
+    const { touch = true, follow = true } = opts;
+    const before = this._project();
+    let next = fn(before);
+    if (next === before) return;
+    if (follow && (next.sections !== before.sections || next.settings !== before.settings)) {
+      const faces = exteriorFaces(next.sections, next.settings);
+      const followed = followWindows(next.windows, exteriorFaces(before.sections, before.settings), faces, (w) => shapeCenterU(w.shape));
+      const windows = syncRooflines(followed, faces);
+      next = { ...next, floors: followFloors(before, next), windows };
+    }
+    if (touch) {
+      next = { ...next, updatedAt: Date.now() };
+      if (!sameState(before, next)) this.recordHistory(before);
+    }
+    this._project.set(next);
     this.scheduleSave();
+  }
+
+  private recordHistory(before: DesignState): void {
+    if (!this.pendingBase) this.pendingBase = stateOf(before);
+    if (this.redoStack.length) {
+      this.redoStack = [];
+      this._historyVersion.update((v) => v + 1);
+    }
+    if (this.historyTimer) clearTimeout(this.historyTimer);
+    this.historyTimer = null;
+    if (this.gestureDepth === 0) this.historyTimer = setTimeout(() => this.commitHistory(), HISTORY_DEBOUNCE_MS);
+    this._historyVersion.update((v) => v + 1);
+  }
+
+  private commitHistory(): void {
+    if (this.historyTimer) clearTimeout(this.historyTimer);
+    this.historyTimer = null;
+    const base = this.pendingBase;
+    this.pendingBase = null;
+    if (base && designKey(base) !== designKey(this._project())) {
+      this.undoStack.push(base);
+      if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
+    }
+    this._historyVersion.update((v) => v + 1);
+  }
+
+  private applyHistory(state: DesignState): void {
+    this._project.update((p) => ({ ...p, ...state, updatedAt: Date.now() }));
+    this.scheduleSave();
+    this._historyVersion.update((v) => v + 1);
+  }
+
+  private clearHistory(): void {
+    if (this.historyTimer) clearTimeout(this.historyTimer);
+    this.historyTimer = null;
+    this.pendingBase = null;
+    this.undoStack = [];
+    this.redoStack = [];
+    this._historyVersion.update((v) => v + 1);
+  }
+
+  private replaceProject(project: Project): void {
+    this._project.set(project);
+    this.clearHistory();
+    this.bumpViewEpoch();
   }
 
   private bumpViewEpoch(): void {
@@ -319,9 +519,8 @@ export class ProjectStore {
   private openProjectForce(id: string): void {
     const loaded = this.repo.loadProject(id);
     if (!loaded) return this.newProject(DEFAULT_PROJECT_NAME);
-    this._project.set(loaded);
+    this.replaceProject(loaded);
     this.repo.setLastOpenId(id);
-    this.bumpViewEpoch();
   }
 
   private refreshIndex(): void {
@@ -348,5 +547,22 @@ export class ProjectStore {
 }
 
 function snapshotOf(p: Project): DesignSnapshot {
-  return { rootId: p.rootId, sections: p.sections, settings: p.settings, camera: p.camera };
+  return {
+    rootId: p.rootId,
+    sections: p.sections,
+    floors: p.floors,
+    settings: p.settings,
+    camera: p.camera,
+    windows: p.windows,
+    skylights: p.skylights,
+  };
+}
+
+/** Carries every floor's interior walls and exterior doors along with an outline change. */
+function followFloors(before: Project, after: Project): Floor[] {
+  return after.floors.map((f) => {
+    const old = regionOf(before.sections, before.settings, f);
+    const now = regionOf(after.sections, after.settings, f);
+    return followOutline(f, old, now);
+  });
 }

@@ -1,7 +1,7 @@
 import { MIN_SECTION_SIZE, WORLD_LIMIT } from '../model/defaults';
 import { Rect, Section } from '../model/types';
 import { isConnected } from './graph';
-import { interiorsOverlap, intervalsOverlap, outwardSign, sideAxis, spanAcross, x0, x1, y0, y1 } from './rect';
+import { interiorsOverlap, intervalsOverlap, outwardSign, quantize, sideAxis, spanAcross, x0, x1, y0, y1 } from './rect';
 import { SideSegment } from './edges';
 
 /**
@@ -9,7 +9,7 @@ import { SideSegment } from './edges';
  * committed, so the section graph can never become corrupted.
  */
 export type LayoutViolation =
-  | 'non-integer'
+  | 'off-grid'
   | 'too-small'
   | 'out-of-bounds'
   | 'overlap'
@@ -19,7 +19,7 @@ export type LayoutViolation =
 export function validateLayout(sections: readonly Section[], rootId: string): LayoutViolation | null {
   if (!sections.some((s) => s.id === rootId)) return 'missing-root';
   for (const { rect: r } of sections) {
-    if (![r.x, r.y, r.w, r.d].every(Number.isInteger)) return 'non-integer';
+    if (![r.x, r.y, r.w, r.d].every((v) => v === quantize(v))) return 'off-grid';
     if (r.w < MIN_SECTION_SIZE || r.d < MIN_SECTION_SIZE) return 'too-small';
     if (x0(r) < -WORLD_LIMIT || y0(r) < -WORLD_LIMIT || x1(r) > WORLD_LIMIT || y1(r) > WORLD_LIMIT) {
       return 'out-of-bounds';

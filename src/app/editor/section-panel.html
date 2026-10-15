@@ -27,7 +27,7 @@
       @if (isRoot()) {
         <span class="root-tag" pTooltip="Anchor section: every section must connect to it">Anchor</span>
       }
-      <span class="dims">{{ section().rect.w }}' × {{ section().rect.d }}'</span>
+      <span class="dims">{{ formatFeet(section().rect.w) }} × {{ formatFeet(section().rect.d) }}</span>
     </div>
     @if (!isRoot()) {
       <span
@@ -74,16 +74,9 @@
   </div>
 
   <div class="field toggle-row">
-    <span class="label">Unheated</span>
-    <p-toggleswitch [ngModel]="section().unheated" (ngModelChange)="setUnheated($event)" />
+    <span class="label">Patio</span>
+    <p-toggleswitch [ngModel]="section().patio.enabled" (ngModelChange)="setPatio($event)" />
   </div>
-
-  @if (section().unheated) {
-    <div class="field toggle-row nested">
-      <span class="label">Patio</span>
-      <p-toggleswitch [ngModel]="section().patio.enabled" (ngModelChange)="setPatio($event)" />
-    </div>
-  }
 
   @if (section().patio.enabled) {
     <div class="field">

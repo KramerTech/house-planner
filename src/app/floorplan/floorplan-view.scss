@@ -1,0 +1,207 @@
+:host {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+}
+
+.canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: #f7f8f6;
+}
+
+app-furniture-panel { flex: none; }
+
+.plan { position: absolute; inset: 0; display: block; }
+
+* { vector-effect: non-scaling-stroke; }
+
+.grid-minor { fill: none; stroke: #e3e6e1; }
+.grid-major { fill: none; stroke: #cfd4cc; }
+.hatch { stroke: #a9bccb; vector-effect: none; }
+.earth-hatch { stroke: #c4ab8c; vector-effect: none; }
+
+.patio { fill: url(#fp-hatch); opacity: 0.5; stroke: #9fb4c4; stroke-dasharray: 4 3; }
+.ext-wall { fill: #3b4a57; }
+.win-mark {
+  rect { fill: #cfe3f3; stroke: #3b4a57; stroke-width: 1; }
+  line { stroke: #3b4a57; stroke-width: 1; }
+}
+.floor { fill: #fdfcf9; shape-rendering: crispEdges; }
+.below-outline { fill: none; stroke: #b4bcc3; stroke-dasharray: 6 4; }
+.below-wall { fill: #c7ced4; opacity: 0.3; }
+.below-item { opacity: 0.12; }
+// Basement: the house above it, and the ground left undug.
+.above-outline { fill: none; stroke: #8d7b66; stroke-dasharray: 6 4; }
+.above-wall { fill: none; stroke: #a7b0b8; stroke-dasharray: 3 3; }
+.undug { fill: #efe6da; }
+.ghost-item { opacity: 0.7; }
+
+.opening-fill { fill: rgb(96 125 150 / 0.16); }
+.opening {
+  fill: url(#fp-hatch);
+  stroke: #8193a3;
+  stroke-dasharray: 5 4;
+  &.area { fill: none; stroke: #a08667; }
+  &.selected, &.draft { stroke: #2563eb; stroke-width: 2; stroke-dasharray: none; }
+}
+
+.wall {
+  fill: #5d6b77;
+  &.hover { fill: #45607a; }
+  &.selected { fill: #2563eb; }
+  &.misfit { fill: #dc2626; }
+}
+
+// A room divider: a dashed centerline, with an invisible full-width band to grab.
+.divider {
+  .hit { fill: transparent; }
+  line { stroke: #7d8a95; stroke-width: 1.5; stroke-dasharray: 6 4; }
+  &.hover line { stroke: #45607a; stroke-width: 2.5; }
+  &.selected line { stroke: #2563eb; stroke-width: 2.5; }
+  &.misfit line { stroke: #dc2626; }
+}
+
+.door {
+  .gap { fill: #fdfcf9; }
+  .solid { fill: none; stroke: #3b4a57; stroke-width: 1.5; }
+  .arc { fill: none; stroke: #7d8a95; stroke-width: 1; }
+  .dashed { fill: none; stroke: #7d8a95; stroke-dasharray: 3 3; }
+  &.hover .solid { stroke: #45607a; }
+  &.selected .solid, &.selected .arc { stroke: #2563eb; stroke-width: 2.5; }
+  &.invalid .solid { stroke: #dc2626; }
+  &.ghost { opacity: 0.75; .solid, .arc { stroke: #16a34a; } }
+  &.ghost.invalid .solid, &.ghost.invalid .arc { stroke: #dc2626; }
+}
+
+.node {
+  fill: #fff;
+  stroke: #5d6b77;
+  stroke-width: 1.2;
+  &.active { fill: #2563eb; stroke: #fff; }
+}
+
+.sel-outline { fill: none; stroke: #2563eb; stroke-width: 2; stroke-dasharray: 5 3; }
+.sel-group { fill: rgb(37 99 235 / 0.04); stroke: #2563eb; stroke-width: 1; stroke-dasharray: 2 3; }
+.wall-preview { fill: rgb(37 99 235 / 0.55); &.invalid { fill: rgb(220 38 38 / 0.55); } }
+.corner-hl { fill: #16a34a; }
+.guide { stroke: #f59e0b; stroke-dasharray: 4 4; }
+.snap { fill: none; stroke: #6b7280; stroke-width: 1.5; &.connect { stroke: #16a34a; fill: rgb(22 163 74 / 0.2); } }
+
+.room-area { font-size: 12px; font-weight: 600; fill: #51606c; }
+.room-dims { font-size: 10.5px; fill: #7a858f; }
+.opening-label { font-size: 11px; font-weight: 600; fill: #5b6f80; &.area { fill: #7d6449; } }
+
+.len-label {
+  rect { fill: #1e3a8a; }
+  text { fill: #fff; font-size: 11px; font-weight: 600; }
+}
+
+%card {
+  position: absolute;
+  background: rgb(255 255 255 / 0.95);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.16);
+  z-index: 20;
+}
+
+// The tools, the current tool's options under them, then the floor summary.
+.top-right {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  > * { position: static; pointer-events: auto; }
+}
+
+.toolbar {
+  @extend %card;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  white-space: nowrap;
+}
+
+button.tool, button.act {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3b4a57;
+  padding: 6px 9px;
+  &:hover:not(:disabled) { background: #f1f3f4; }
+  &.active, &.active:hover { background: #fdf0e1; color: #b45309; }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+  svg { width: 16px; height: 16px; }
+  .f { fill: currentColor; }
+  .s { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+}
+button.act.danger { color: #b91c1c; }
+.sep { width: 1px; height: 22px; background: #e2e5e8; margin: 0 4px; }
+
+.summary {
+  @extend %card;
+  min-width: 170px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #51606c;
+  pointer-events: none;
+  .title { font-weight: 700; color: #1f2933; margin-bottom: 2px; }
+  .muted { font-weight: 400; color: #7a858f; }
+  .row { display: flex; justify-content: space-between; gap: 14px; line-height: 1.6; }
+  b { color: #1f2933; }
+  .warn { color: #b91c1c; margin-top: 4px; }
+}
+
+.stack { position: absolute; left: 10px; top: 10px; z-index: 25; }
+
+.selbar {
+  @extend %card;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  white-space: nowrap;
+  .sel-title { font-size: 12px; font-weight: 600; color: #3b4a57; padding: 0 8px; }
+}
+
+.empty {
+  @extend %card;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 300px;
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #51606c;
+  b { display: block; color: #1f2933; margin-bottom: 4px; }
+}
+
+.view-controls { @extend %card; right: 10px; bottom: 10px; display: flex; padding: 2px; }
+
+.hint {
+  position: absolute;
+  left: 12px;
+  right: 130px;
+  bottom: 14px;
+  font-size: 12px;
+  color: #5b6670;
+}

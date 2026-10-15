@@ -1,5 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { ButtonModule } from '@openng/optimus-ui/button';
+import { TooltipModule } from '@openng/optimus-ui/tooltip';
 import { ProjectStore } from '../core/state/project-store';
 import { CheckpointMenu } from './checkpoint-menu';
 import { ProjectPicker } from './project-picker';
@@ -7,12 +8,34 @@ import { SettingsDialog } from './settings-dialog';
 
 @Component({
   selector: 'app-top-bar',
-  imports: [ButtonModule, CheckpointMenu, ProjectPicker, SettingsDialog],
+  imports: [ButtonModule, TooltipModule, CheckpointMenu, ProjectPicker, SettingsDialog],
   template: `
     <div class="brand"><i class="pi pi-home"></i> Home Designer</div>
     <span class="divider"></span>
     <span class="project-name" [title]="store.project().name">{{ store.project().name }}</span>
     <span class="spacer"></span>
+    <p-button
+      icon="pi pi-undo"
+      severity="secondary"
+      [text]="true"
+      [disabled]="!store.canUndo()"
+      (onClick)="store.undo()"
+      pTooltip="Undo (Ctrl+Z)"
+      tooltipPosition="bottom"
+      ariaLabel="Undo"
+    />
+    <p-button
+      icon="pi pi-undo"
+      styleClass="redo"
+      severity="secondary"
+      [text]="true"
+      [disabled]="!store.canRedo()"
+      (onClick)="store.redo()"
+      pTooltip="Redo (Ctrl+Shift+Z)"
+      tooltipPosition="bottom"
+      ariaLabel="Redo"
+    />
+    <span class="divider"></span>
     <app-checkpoint-menu />
     <p-button label="Projects" icon="pi pi-folder-open" severity="secondary" [text]="true" (onClick)="pickerOpen.set(true)" />
     <p-button label="Settings" icon="pi pi-cog" severity="secondary" [text]="true" (onClick)="settingsOpen.set(true)" />
@@ -29,6 +52,7 @@ import { SettingsDialog } from './settings-dialog';
     .divider { width: 1px; height: 22px; background: #e2e5e8; }
     .project-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
     .spacer { flex: 1; }
+    :host ::ng-deep .redo .pi { transform: scaleX(-1); }
   `,
 })
 export class TopBar {

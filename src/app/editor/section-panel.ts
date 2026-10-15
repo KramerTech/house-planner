@@ -18,8 +18,8 @@ const DIR_NAME: Record<Side, string> = { N: 'north', E: 'east', S: 'south', W: '
 
 /**
  * Roof definition UI shown at the center of each section: slope direction arrow,
- * pitch slider, linked low/high wall slider, unheated toggle (which gates the patio
- * toggle and its post spacing), and delete.
+ * pitch slider, linked low/high wall slider, patio toggle and post spacing, and
+ * delete. (Heated/unheated is kept in the model but not offered here for now.)
  * In compact mode (section too small on screen) only the arrow and an expand
  * button are shown.
  */
@@ -67,10 +67,6 @@ export class SectionPanel {
 
   protected setLowWall(lowWallHeight: number): void {
     this.store.updateRoof(this.section().id, { lowWallHeight });
-  }
-
-  protected setUnheated(unheated: boolean): void {
-    this.store.setUnheated(this.section().id, unheated);
   }
 
   protected setPatio(enabled: boolean): void {

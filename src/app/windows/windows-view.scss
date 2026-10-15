@@ -1,0 +1,206 @@
+:host {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+}
+
+.canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: #f7f8f6;
+}
+
+.plan { position: absolute; inset: 0; display: block; }
+
+* { vector-effect: non-scaling-stroke; }
+
+.grid-minor { fill: none; stroke: #e3e6e1; }
+.grid-major { fill: none; stroke: #cfd4cc; }
+.earth-hatch { stroke: #c4ab8c; vector-effect: none; }
+
+// The face, seen from outside.
+.earth { fill: #efe6da; }
+.face { fill: #ece6da; stroke: #5d6b77; stroke-width: 1.5; }
+.floor-line { stroke: #9aa5ae; stroke-dasharray: 6 4; &.ceiling { stroke: #b4bcc3; stroke-dasharray: 2 3; } }
+.lower-roof { fill: #56616c; stroke: #3b4148; stroke-width: 1; }
+.floor-label { font-size: 11px; font-weight: 600; fill: #7a858f; &.ceiling { font-weight: 400; fill: #9aa5ae; } }
+.door {
+  // Brown like exterior doors in 3D (DOOR_COLORS in door-builder.ts); garage doors and cased openings as there.
+  fill: #7a5233;
+  stroke: #4a3221;
+  stroke-width: 1.2;
+  cursor: ew-resize;
+  &.garage { fill: #eef0f1; stroke: #7d8a95; }
+  &.opening { fill: #fdfcf9; stroke: #7d8a95; stroke-dasharray: 4 3; }
+  &.selected { stroke: #2563eb; stroke-width: 2.5; stroke-dasharray: none; }
+  &.invalid { stroke: #dc2626; stroke-width: 2.5; }
+}
+// Interior walls behind the face, seen through it.
+.partition { fill: rgb(93 107 119 / 0.22); stroke: #7d8a95; stroke-width: 1; stroke-dasharray: 4 3; &.divider { fill: none; stroke-dasharray: 2 4; } }
+.room-label { font-size: 11px; font-weight: 600; fill: #7a858f; pointer-events: none; }
+
+.window {
+  cursor: pointer;
+  .glass { fill: #8dbbe0; }
+  .sash { fill: none; stroke: #f7f8f6; stroke-width: 2; }
+  .bar { stroke: #f7f8f6; stroke-width: 2; }
+  .hinge { stroke: #45607a; stroke-width: 1; stroke-dasharray: 4 3; }
+  .outline { fill: none; stroke: #3b4a57; stroke-width: 1.6; }
+  &.selected .outline { stroke: #2563eb; stroke-width: 2.5; }
+  &.invalid .outline { stroke: #dc2626; stroke-width: 2.5; }
+}
+
+// The roof, from above.
+.roof { fill: #c9ced3; stroke: #56616c; stroke-width: 1.2; &.patio { fill: #dde1e4; stroke-dasharray: 4 3; } }
+.slope { fill: none; stroke: #7d8790; stroke-width: 1.2; }
+rect.glass {
+  fill: #8dbbe0;
+  stroke: #3b4a57;
+  stroke-width: 1.4;
+  &.selected { stroke: #2563eb; stroke-width: 2.5; }
+  &.invalid { stroke: #dc2626; stroke-width: 2.5; }
+}
+
+.draft { fill: rgb(37 99 235 / 0.18); stroke: #2563eb; stroke-width: 1.5; stroke-dasharray: 5 3; &.invalid { fill: rgb(220 38 38 / 0.15); stroke: #dc2626; } }
+.corner { fill: #2563eb; }
+.handle { fill: #fff; stroke: #2563eb; stroke-width: 1.5; }
+.snap-line { stroke: #f59e0b; stroke-width: 1; stroke-dasharray: 5 4; pointer-events: none; }
+.snap-dim {
+  pointer-events: none;
+  line { stroke: #db2777; stroke-width: 1.2; }
+  rect { fill: #db2777; }
+  text { fill: #fff; font-size: 10px; font-weight: 700; }
+}
+.guide { stroke: #f59e0b; stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.45; &.on { opacity: 1; stroke-width: 1.5; } }
+
+%card {
+  position: absolute;
+  background: rgb(255 255 255 / 0.95);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.16);
+  z-index: 20;
+}
+
+.face-bar {
+  @extend %card;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  .face-name { font-size: 12px; font-weight: 700; color: #1f2933; padding: 0 6px; min-width: 150px; text-align: center; white-space: nowrap; }
+  .step { border: none; background: none; border-radius: 6px; padding: 6px 7px; cursor: pointer; color: #3b4a57; &:hover { background: #f1f3f4; } }
+  .roof-btn {
+    border: none; background: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; color: #3b4a57;
+    &:hover { background: #f1f3f4; }
+    &.active { background: #fdf0e1; color: #b45309; }
+  }
+}
+
+.top-right {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  > * { position: static; pointer-events: auto; }
+}
+
+.toolbar {
+  @extend %card;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  white-space: nowrap;
+  .label { font-size: 12px; color: #51606c; padding: 0 6px; }
+  select { font: inherit; font-size: 12px; padding: 4px; border: 1px solid #d5dade; border-radius: 6px; margin-right: 3px; }
+}
+
+button.tool, button.act {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3b4a57;
+  padding: 6px 9px;
+  &:hover { background: #f1f3f4; }
+  &.active, &.active:hover { background: #fdf0e1; color: #b45309; }
+  svg { width: 16px; height: 16px; }
+  path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+}
+button.act.danger { color: #b91c1c; }
+.sep { width: 1px; height: 22px; background: #e2e5e8; margin: 0 2px; }
+
+.minimap {
+  @extend %card;
+  left: 10px;
+  bottom: 40px;
+  width: 170px;
+  height: 120px;
+  padding: 6px;
+  box-sizing: border-box;
+  .mm-house { fill: #e7e2d8; stroke: none; }
+  .mm-face {
+    stroke: #7d8a95;
+    stroke-width: 4;
+    stroke-linecap: round;
+    cursor: pointer;
+    &:hover { stroke: #45607a; }
+    &.clerestory { stroke-dasharray: 3 3; }
+    &.active { stroke: #b45309; stroke-width: 5; }
+  }
+}
+
+.selbar {
+  @extend %card;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  white-space: nowrap;
+  .sel-title { font-size: 12px; font-weight: 600; color: #3b4a57; padding: 0 6px; }
+  select { font: inherit; font-size: 12px; padding: 4px; border: 1px solid #d5dade; border-radius: 6px; }
+  .follow { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #3b4a57; padding: 0 4px; cursor: pointer; }
+  .grille { display: flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; color: #3b4a57; padding: 0 4px; }
+  .mini { width: 20px; height: 20px; border: 1px solid #d5dade; border-radius: 5px; background: #fff; cursor: pointer; padding: 0; line-height: 1; }
+}
+
+.empty {
+  @extend %card;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #51606c;
+  b { display: block; color: #1f2933; margin-bottom: 4px; }
+}
+
+.view-controls { @extend %card; right: 10px; bottom: 10px; display: flex; padding: 2px; }
+
+.hint {
+  position: absolute;
+  left: 190px;
+  right: 130px;
+  bottom: 14px;
+  font-size: 12px;
+  color: #5b6670;
+}

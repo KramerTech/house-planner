@@ -20,7 +20,8 @@ interface SettingField {
 const FIELDS: SettingField[] = [
   { key: 'overhang', label: 'Roof overhang', unit: 'ft', min: 0, max: 6, step: 0.5 },
   { key: 'roofThickness', label: 'Roof thickness', unit: 'in', min: 1, max: 24, step: 1 },
-  { key: 'wallThickness', label: 'Wall thickness', unit: 'in', min: 2, max: 18, step: 0.5 },
+  { key: 'wallThickness', label: 'Exterior wall thickness', unit: 'in', min: 2, max: 18, step: 0.5 },
+  { key: 'interiorWallThickness', label: 'Interior wall thickness', unit: 'in', min: 2, max: 12, step: 0.5 },
   { key: 'postSize', label: 'Patio post size', unit: 'in', min: 3, max: 12, step: 0.5 },
   { key: 'defaultSectionDepth', label: 'New section depth', unit: 'ft', min: 1, max: 60, step: 1 },
 ];

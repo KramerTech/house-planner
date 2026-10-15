@@ -1,4 +1,4 @@
-import { sideAxis, sideCoord } from '../core/geometry/rect';
+import { sideAxis, sideCoord, snapLayout } from '../core/geometry/rect';
 import { SideRange, SideRef } from '../core/geometry/side-resize';
 import { Section } from '../core/model/types';
 import { clamp, Point } from './viewport';
@@ -15,6 +15,8 @@ export interface ActiveSideDrag {
   /** Pointer position minus side coordinate at grab time, so the side doesn't jump to the cursor. */
   grabOffset: number;
   lastValue: number;
+  /** Snap step (ft). */
+  step: number;
 }
 
 /**
@@ -32,16 +34,17 @@ export function beginSideDrag(
   original: readonly Section[],
   range: SideRange,
   pointerWorld: Point,
+  step: number,
 ): ActiveSideDrag {
   const section = original.find((s) => s.id === seed.sectionId)!;
   const axis = sideAxis(seed.side);
   const coord = sideCoord(section.rect, seed.side);
   const pointerAxis = axis === 'x' ? pointerWorld.x : pointerWorld.y;
-  return { seed, axis, original, range, grabOffset: pointerAxis - coord, lastValue: coord };
+  return { seed, axis, original, range, grabOffset: pointerAxis - coord, lastValue: coord, step };
 }
 
-/** The snapped (1 ft), clamped side coordinate for a pointer position. */
+/** The snapped, clamped side coordinate for a pointer position. */
 export function dragValue(drag: ActiveSideDrag, pointerWorld: Point): number {
   const pointerAxis = drag.axis === 'x' ? pointerWorld.x : pointerWorld.y;
-  return clamp(Math.round(pointerAxis - drag.grabOffset), drag.range.min, drag.range.max);
+  return clamp(snapLayout(pointerAxis - drag.grabOffset, drag.step), drag.range.min, drag.range.max);
 }
