@@ -127,6 +127,8 @@ export interface RoomName {
   x: number;
   y: number;
   name: string;
+  /** Not heated (a garage, workshop, storage): its area is counted apart in the summary. */
+  unheated?: boolean;
 }
 
 /**

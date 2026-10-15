@@ -19,7 +19,8 @@ import { Rect, Section, Side } from '../core/model/types';
 import { EditorState } from '../core/state/editor-state';
 import { ProjectStore } from '../core/state/project-store';
 import { exteriorDims } from '../core/floorplan/exterior-dims';
-import { floorArea, grossAreas, openingsOf, outsideFootprint, regionOf, wallFootprint } from '../core/floorplan/floor-region';
+import { floorAreas } from '../core/floorplan/areas';
+import { grossAreas, groundIndex, openingsOf, outsideFootprint, regionOf, wallFootprint } from '../core/floorplan/floor-region';
 import { formatFeet } from '../core/model/format';
 import { freeSegmentNear, SideHandle, sidesNear } from './hit-test';
 import { SectionPanel } from './section-panel';
@@ -190,19 +191,30 @@ export class PlanView {
     return 'grab';
   });
 
-  /** Gross areas to the outside faces of the walls (and patio posts). */
+  /**
+   * Gross areas to the outside faces of the walls (and patio posts): each floor's
+   * enclosed area, heated and unheated (rooms named and marked unheated in
+   * Floorplan), floors 1, 2, 3… then the basement; and the covered patios. Rows are
+   * rounded first so the totals add up as shown.
+   */
   protected readonly area = computed(() => {
+    const sections = this.sections();
     const settings = this.store.settings();
-    const a = grossAreas(this.sections(), settings);
     const floors = this.store.floors();
-    const areaOf = (pick: (elevation: number) => boolean) =>
-      Math.round(
-        floors.reduce((sum, f, i) => (pick(f.elevation) ? sum + floorArea(regionOf(this.sections(), settings, f), openingsOf(floors, i)) : sum), 0),
-      );
-    const [upper, basement] = [areaOf((e) => e > 0), areaOf((e) => e < 0)];
-    const [enclosed, covered] = [Math.round(a.enclosed), Math.round(a.covered)];
-    return { enclosed, upper, basement, covered, total: enclosed + covered + upper + basement };
+    const g = groundIndex(floors);
+    const rows = floors.map((f, i) => {
+      const a = floorAreas(f, regionOf(sections, settings, f), openingsOf(floors, i), settings.interiorWallThickness);
+      return { label: i < g ? 'Basement' : `Floor ${i - g + 1}`, heated: Math.round(a.heated), unheated: Math.round(a.unheated) };
+    });
+    const ordered = [...rows.slice(g), ...rows.slice(0, g)];
+    const heated = ordered.reduce((s, r) => s + r.heated, 0);
+    const unheated = ordered.reduce((s, r) => s + r.unheated, 0);
+    const covered = Math.round(grossAreas(sections, settings).covered);
+    return { floors: ordered, heated, unheated, enclosed: heated + unheated, covered };
   });
+
+  /** An area in the summary: a dash for none. */
+  protected readonly sqft = (v: number) => (v ? v.toLocaleString() : '—');
 
   /**
    * Each section's clear inside size: its centerline size less half a wall (or post)

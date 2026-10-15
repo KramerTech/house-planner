@@ -17,6 +17,7 @@ import {
 } from '../core/floorplan/floor-region';
 import { copyGroups, group, isGroup, pruneGroups, rotateAbout, ungroup, unitItems, unitsOf } from '../core/floorplan/groups';
 import { Box, cellsWhere, pointIn } from '../core/floorplan/region';
+import { isUnheated } from '../core/floorplan/areas';
 import { findRooms, Room } from '../core/floorplan/rooms';
 import {
   addWall,
@@ -451,20 +452,30 @@ export class FloorplanView {
     if (v.scale < 5) return [];
     const names = this.floor().roomNames;
     const editing = this.naming()?.room;
-    return this.rooms().map((r) => {
+    // The room being named shows only the name box (and its toggle) for now.
+    return this.rooms().filter((r) => r !== editing).map((r) => {
       const s = worldToScreen(v, r);
       return {
         x: s.x,
         y: s.y,
-        name: r === editing ? null : (names.find((n) => pointIn(r.cells, n.x, n.y))?.name ?? null),
+        name: names.find((n) => pointIn(r.cells, n.x, n.y))?.name ?? null,
+        unheated: isUnheated(this.floor(), r),
         area: `${Math.round(r.area)} sq ft`,
         dims: r.rect && v.scale >= 9 ? `${formatFeet(r.rect.w)} × ${formatFeet(r.rect.d)}` : null,
       };
     });
   });
 
-  /** A room name being typed (after double-clicking a room). */
-  protected readonly naming = signal<{ room: Room; at: Pt; value: string } | null>(null);
+  /** Unheated rooms' floor, hatched (plan units). */
+  protected readonly unheatedCells = computed(() => {
+    const f = this.floor();
+    return this.rooms()
+      .filter((r) => isUnheated(f, r))
+      .flatMap((r) => r.cells);
+  });
+
+  /** A room name being typed (after double-clicking a room), and whether it's unheated. */
+  protected readonly naming = signal<{ room: Room; at: Pt; value: string; unheated: boolean } | null>(null);
   protected readonly namingBox = computed(() => {
     const n = this.naming();
     return n && worldToScreen(this.view(), n.room);
@@ -1175,13 +1186,20 @@ export class FloorplanView {
       this.endChain();
       return;
     }
-    // Double-clicking a room (not something in it) names it.
+    // Double-clicking a room names it, even over furniture, stairs or an opening in it;
+    // only what bounds rooms (walls, their corners, doors) gets in the way.
     const w = screenToWorld(this.view(), this.localPoint(e));
-    if (this.hitAt(w)) return;
+    const hit = this.hitAt(w);
+    if (hit && (hit.kind === 'wall' || hit.kind === 'node' || hit.kind === 'door')) return;
     const room = this.rooms().find((r) => pointIn(r.cells, w.x, w.y));
     if (!room) return;
     const current = this.floor().roomNames.find((n) => pointIn(room.cells, n.x, n.y));
-    this.naming.set({ room, at: current ? { x: current.x, y: current.y } : { x: room.x, y: room.y }, value: current?.name ?? '' });
+    this.naming.set({
+      room,
+      at: current ? { x: current.x, y: current.y } : { x: room.x, y: room.y },
+      value: current?.name ?? '',
+      unheated: !!current?.unheated,
+    });
   }
 
   /** Saves the room name being typed (an empty name removes it). */
@@ -1192,8 +1210,18 @@ export class FloorplanView {
     const name = n.value.trim();
     this.edit((f) => {
       const others = f.roomNames.filter((r) => !pointIn(n.room.cells, r.x, r.y));
-      return { ...f, roomNames: name ? [...others, { id: newId(), x: n.at.x, y: n.at.y, name }] : others };
+      const pin = { id: newId(), x: n.at.x, y: n.at.y, name, ...(n.unheated ? { unheated: true } : {}) };
+      return { ...f, roomNames: name ? [...others, pin] : others };
     });
+  }
+
+  protected setNameValue(value: string): void {
+    this.naming.update((n) => n && { ...n, value });
+  }
+
+  /** Marks the room being named unheated, or heated again (saved with its name). */
+  protected toggleUnheated(): void {
+    this.naming.update((n) => n && { ...n, unheated: !n.unheated });
   }
 
   protected onNameKey(e: KeyboardEvent): void {

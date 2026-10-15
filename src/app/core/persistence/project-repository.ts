@@ -10,6 +10,8 @@ const PREFIX = 'home-designer';
 const LEGACY_PREFIX = 'shed-designer';
 const INDEX_KEY = `${PREFIX}:index`;
 const LAST_OPEN_KEY = `${PREFIX}:last-open`;
+/** Set once the example projects have been loaded here; they're never loaded again. */
+const EXAMPLES_KEY = `${PREFIX}:examples-loaded`;
 const projectKey = (id: string) => `${PREFIX}:project:${id}`;
 
 /**
@@ -61,6 +63,15 @@ export class ProjectRepository {
       this.listProjects().filter((p) => p.id !== id),
     );
     if (this.lastOpenId() === id) this.setLastOpenId(null);
+  }
+
+  /** True once this browser has been given the example projects. */
+  examplesLoaded(): boolean {
+    return this.read<boolean>(EXAMPLES_KEY) === true;
+  }
+
+  markExamplesLoaded(): void {
+    this.write(EXAMPLES_KEY, true);
   }
 
   lastOpenId(): string | null {

@@ -30,7 +30,7 @@ import { pruneGroups } from '../floorplan/groups';
  *                      (height: garage doors only)
  *             item:    [type, x, y, rotation]
  *             opening, unexcavated: [x0, y0, x1, y1]
- *             name:    [x, y, text]
+ *             name:    [x, y, text, unheated?]  (1 when unheated; left off when heated)
  *             dividers: the indices of walls that are room dividers
  *             group:   [member…], each an item index, or ~index (−1 − index) of another group
  *   glazing:  0 when there are no windows or skylights, else [windows, skylights]:
@@ -239,7 +239,7 @@ function packFloor(f: Floor): PackedFloor {
     ]),
     f.items.map((it) => [it.type, r4(it.x), r4(it.y), it.rotation]),
     f.openings.map((o) => [r4(o.x0), r4(o.y0), r4(o.x1), r4(o.y1)]),
-    f.roomNames.map((n) => [r4(n.x), r4(n.y), n.name]),
+    f.roomNames.map((n) => [r4(n.x), r4(n.y), n.name, ...(n.unheated ? [1] : [])]),
     f.unexcavated.map((o) => [r4(o.x0), r4(o.y0), r4(o.x1), r4(o.y1)]),
     f.walls.flatMap((w, i) => (w.divider ? [i] : [])),
     f.groups.map((g) => g.members.map(member).filter((m): m is number => m !== null)),
@@ -288,7 +288,7 @@ function unpackFloor(raw: unknown): Floor {
   }
   for (const n of Array.isArray(names) ? names : []) {
     if (!Array.isArray(n) || !isNum(n[0]) || !isNum(n[1]) || typeof n[2] !== 'string') continue;
-    floor.roomNames.push({ id: newId(), x: n[0], y: n[1], name: n[2] });
+    floor.roomNames.push({ id: newId(), x: n[0], y: n[1], name: n[2], ...(n[3] === 1 ? { unheated: true } : {}) });
   }
   for (const o of Array.isArray(unexcavated) ? unexcavated : []) {
     if (!Array.isArray(o) || o.length < 4 || !o.every(isNum)) continue;

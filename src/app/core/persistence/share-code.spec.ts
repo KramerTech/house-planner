@@ -15,7 +15,10 @@ function furnishedFloors(): Floor[] {
     { id: 'd2', host: { side: 'S', coord: 12 }, at: 4, width: 3, kind: 'single', swing: -1, hinge: -1 },
   ];
   ground.items = [{ id: 'i1', type: 'bed-queen', x: 4, y: 5, rotation: 90 }];
-  ground.roomNames = [{ id: 'r1', x: 4, y: 5, name: 'Primary bedroom' }];
+  ground.roomNames = [
+    { id: 'r1', x: 4, y: 5, name: 'Primary bedroom' },
+    { id: 'r2', x: 14, y: 5, name: 'Garage', unheated: true },
+  ];
   const upper = createFloor(10);
   upper.openings = [{ id: 'o1', x0: 1, y0: 1, x1: 4, y1: 12 }];
   return [ground, upper];
@@ -71,6 +74,8 @@ describe('share codes', () => {
     expect(ground.items[0]).toMatchObject({ type: 'bed-queen', x: 4, y: 5, rotation: 90 });
     expect(upper.openings[0]).toMatchObject({ x0: 1, y0: 1, x1: 4, y1: 12 });
     expect(ground.roomNames[0]).toMatchObject({ x: 4, y: 5, name: 'Primary bedroom' });
+    expect(ground.roomNames[0].unheated).toBeUndefined();
+    expect(ground.roomNames[1]).toMatchObject({ x: 14, y: 5, name: 'Garage', unheated: true });
   });
 
   it('round-trips a basement, undug areas, room dividers and furniture groups', async () => {

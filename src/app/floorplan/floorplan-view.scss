@@ -25,6 +25,8 @@ app-furniture-panel { flex: none; }
 .grid-major { fill: none; stroke: #cfd4cc; }
 .hatch { stroke: #a9bccb; vector-effect: none; }
 .earth-hatch { stroke: #c4ab8c; vector-effect: none; }
+.cold-hatch { stroke: #c3d0db; vector-effect: none; }
+.unheated-room { fill: url(#fp-cold); shape-rendering: crispEdges; pointer-events: none; }
 
 .patio { fill: url(#fp-hatch); opacity: 0.5; stroke: #9fb4c4; stroke-dasharray: 4 3; }
 .ext-wall { fill: #3b4a57; }
@@ -204,4 +206,25 @@ button.act.danger { color: #b91c1c; }
   bottom: 14px;
   font-size: 12px;
   color: #5b6670;
+}
+
+// Naming a room: the name, and whether it's heated.
+.room-naming {
+  position: absolute;
+  z-index: 30;
+  transform: translate(-50%, -13px); // the name box centered where the name goes, the toggle under it
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  input {
+    width: 160px; padding: 3px 6px; font: inherit; font-size: 13px; font-weight: 700; text-align: center;
+    border: 1.5px solid #2563eb; border-radius: 6px; outline: none;
+  }
+  .unheated-toggle {
+    display: flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid #d5dade; border-radius: 6px;
+    background: #fff; font: inherit; font-size: 12px; font-weight: 600; color: #51606c; cursor: pointer;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+    &.on { color: #1e5a8a; border-color: #9fb4c4; background: #eef4f8; }
+  }
 }

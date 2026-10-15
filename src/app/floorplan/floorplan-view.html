@@ -20,6 +20,9 @@
       <pattern id="fp-hatch" patternUnits="userSpaceOnUse" [attr.width]="hatch().size" [attr.height]="hatch().size" patternTransform="rotate(45)">
         <line x1="0" y1="0" x2="0" [attr.y2]="hatch().size" class="hatch" [attr.stroke-width]="hatch().stroke" />
       </pattern>
+      <pattern id="fp-cold" patternUnits="userSpaceOnUse" [attr.width]="hatch().size" [attr.height]="hatch().size" patternTransform="rotate(-45)">
+        <line x1="0" y1="0" x2="0" [attr.y2]="hatch().size" class="cold-hatch" [attr.stroke-width]="hatch().stroke" />
+      </pattern>
       <pattern id="fp-earth" patternUnits="userSpaceOnUse" [attr.width]="hatch().size" [attr.height]="hatch().size" patternTransform="rotate(-45)">
         <line x1="0" y1="0" x2="0" [attr.y2]="hatch().size" class="earth-hatch" [attr.stroke-width]="hatch().stroke" />
       </pattern>
@@ -53,6 +56,9 @@
       }
       @for (r of region().interior; track $index) {
         <rect class="floor" [attr.x]="r.x0" [attr.y]="r.y0" [attr.width]="r.x1 - r.x0" [attr.height]="r.y1 - r.y0" />
+      }
+      @for (c of unheatedCells(); track $index) {
+        <rect class="unheated-room" [attr.x]="c.x0" [attr.y]="c.y0" [attr.width]="c.x1 - c.x0" [attr.height]="c.y1 - c.y0" />
       }
       @for (m of windowMarks(); track m.id) {
         <g class="win-mark">
@@ -208,7 +214,7 @@
           {{ r.name }}
         </text>
       }
-      <text class="room-area" [attr.x]="r.x" [attr.y]="r.y" text-anchor="middle" dominant-baseline="middle">{{ r.area }}</text>
+      <text class="room-area" [attr.x]="r.x" [attr.y]="r.y" text-anchor="middle" dominant-baseline="middle">{{ r.area }}{{ r.unheated ? ' · unheated' : '' }}</text>
       @if (r.dims) {
         <text class="room-dims" [attr.x]="r.x" [attr.y]="r.y + 14" text-anchor="middle" dominant-baseline="middle">{{ r.dims }}</text>
       }
@@ -237,18 +243,29 @@
   </svg>
 
   @if (naming(); as n) {
-    <input
-      class="room-input ui"
-      #nameInput
-      [style.left.px]="namingBox()!.x"
-      [style.top.px]="namingBox()!.y - 16"
-      [value]="n.value"
-      placeholder="Room name"
-      (input)="naming.set({ room: n.room, at: n.at, value: nameInput.value })"
-      (keydown)="onNameKey($event)"
-      (blur)="commitName()"
-      style="position: absolute; z-index: 30; transform: translate(-50%, -50%); width: 160px; padding: 3px 6px; font: inherit; font-size: 13px; font-weight: 700; text-align: center; border: 1.5px solid #2563eb; border-radius: 6px; outline: none"
-    />
+    <div class="room-naming ui" [style.left.px]="namingBox()!.x" [style.top.px]="namingBox()!.y - 16">
+      <input
+        #nameInput
+        [value]="n.value"
+        placeholder="Room name"
+        (input)="setNameValue(nameInput.value)"
+        (keydown)="onNameKey($event)"
+        (blur)="commitName()"
+      />
+      <!-- Keeps the focus in the name box, so toggling doesn't commit the name. -->
+      <button
+        type="button"
+        class="unheated-toggle"
+        [class.on]="n.unheated"
+        [attr.aria-pressed]="n.unheated"
+        (mousedown)="$event.preventDefault()"
+        (click)="toggleUnheated()"
+        pTooltip="Unheated rooms (garage, workshop, storage) are counted apart in the area summary"
+        tooltipPosition="bottom"
+      >
+        <i class="pi" [class.pi-check-square]="n.unheated" [class.pi-stop]="!n.unheated"></i> Unheated
+      </button>
+    </div>
   }
 
   <!-- Top right: the tools, the current tool's options under them, then the floor summary. -->

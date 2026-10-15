@@ -106,17 +106,15 @@
   </div>
 }
 
-<div class="area-summary" aria-label="Area summary">
-  <div class="row main"><span>Enclosed</span><b>{{ area().enclosed.toLocaleString() }} sq ft</b></div>
-  @if (area().upper > 0) {
-    <div class="row"><span>Upper floors</span><b>{{ area().upper.toLocaleString() }} sq ft</b></div>
+<div class="area-summary" aria-label="Area summary (sq ft)">
+  <div class="cols head"><span>Enclosed</span><span>Heated</span><span>Unheated</span></div>
+  @for (r of area().floors; track r.label) {
+    <div class="cols"><span>{{ r.label }}</span><b>{{ sqft(r.heated) }}</b><b>{{ sqft(r.unheated) }}</b></div>
   }
-  @if (area().basement > 0) {
-    <div class="row"><span>Basement</span><b>{{ area().basement.toLocaleString() }} sq ft</b></div>
-  }
-  <div class="row"><span>Covered</span><b>{{ area().covered.toLocaleString() }} sq ft</b></div>
-  <div class="row total"><span>Total</span><b>{{ area().total.toLocaleString() }} sq ft</b></div>
-  <div class="row roof"><span>Roof</span><b>{{ roofArea().toLocaleString() }} sq ft</b></div>
+  <div class="cols soft"><span>Total</span><b>{{ sqft(area().heated) }}</b><b>{{ sqft(area().unheated) }}</b></div>
+  <div class="row soft main"><span>Total Enclosed</span><b>{{ area().enclosed.toLocaleString() }} sq ft</b></div>
+  <div class="row thick"><span>Covered Patio</span><b>{{ area().covered.toLocaleString() }} sq ft</b></div>
+  <div class="row thick"><span>Roof Area</span><b>{{ roofArea().toLocaleString() }} sq ft</b></div>
 </div>
 
 <div class="compass" aria-hidden="true"><span>N</span><i class="pi pi-arrow-up"></i></div>
